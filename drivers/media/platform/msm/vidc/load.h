@@ -18,7 +18,6 @@
 
 struct vidc_core;
 
-void msm_comm_scale_clocks(struct vidc_core *core);
-int msm_comm_check_overloaded(struct vidc_core *core);
+int vidc_scale_clocks(struct vidc_core *core);
 
 #endif /* __MSM_VIDC_LOAD_H__ */

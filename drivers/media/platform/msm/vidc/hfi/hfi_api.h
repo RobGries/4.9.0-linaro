@@ -14,68 +14,65 @@
 #ifndef __VIDC_HFI_API_H__
 #define __VIDC_HFI_API_H__
 
-#include <linux/types.h>
+#include <linux/interrupt.h>
 
-#include "msm_vidc.h"
-#include "msm_vidc_resources.h"
+#include "resources.h"
+#include "hfi.h"
 
-#include "vidc_hfi_helper.h"
-#include "vidc_hfi.h"
-
-#define HAL_BUFFERFLAG_EOS			0x00000001
-#define HAL_BUFFERFLAG_STARTTIME		0x00000002
-#define HAL_BUFFERFLAG_DECODEONLY		0x00000004
-#define HAL_BUFFERFLAG_DATACORRUPT		0x00000008
-#define HAL_BUFFERFLAG_ENDOFFRAME		0x00000010
-#define HAL_BUFFERFLAG_SYNCFRAME		0x00000020
-#define HAL_BUFFERFLAG_EXTRADATA		0x00000040
-#define HAL_BUFFERFLAG_CODECCONFIG		0x00000080
-#define HAL_BUFFERFLAG_TIMESTAMPINVALID		0x00000100
-#define HAL_BUFFERFLAG_READONLY			0x00000200
-#define HAL_BUFFERFLAG_ENDOFSUBFRAME		0x00000400
-#define HAL_BUFFERFLAG_EOSEQ			0x00200000
-#define HAL_BUFFERFLAG_MBAFF			0x08000000
+#define HAL_BUFFERFLAG_EOS			0x1
+#define HAL_BUFFERFLAG_STARTTIME		0x2
+#define HAL_BUFFERFLAG_DECODEONLY		0x4
+#define HAL_BUFFERFLAG_DATACORRUPT		0x8
+#define HAL_BUFFERFLAG_ENDOFFRAME		0x10
+#define HAL_BUFFERFLAG_SYNCFRAME		0x20
+#define HAL_BUFFERFLAG_EXTRADATA		0x40
+#define HAL_BUFFERFLAG_CODECCONFIG		0x80
+#define HAL_BUFFERFLAG_TIMESTAMPINVALID		0x100
+#define HAL_BUFFERFLAG_READONLY			0x200
+#define HAL_BUFFERFLAG_ENDOFSUBFRAME		0x400
+#define HAL_BUFFERFLAG_EOSEQ			0x200000
+#define HAL_BUFFERFLAG_MBAFF			0x8000000
 #define HAL_BUFFERFLAG_YUV_601_709_CSC_CLAMP	0x10000000
 #define HAL_BUFFERFLAG_DROP_FRAME		0x20000000
 #define HAL_BUFFERFLAG_TS_DISCONTINUITY		0x40000000
 #define HAL_BUFFERFLAG_TS_ERROR			0x80000000
 
-#define HAL_DEBUG_MSG_LOW			0x00000001
-#define HAL_DEBUG_MSG_MEDIUM			0x00000002
-#define HAL_DEBUG_MSG_HIGH			0x00000004
-#define HAL_DEBUG_MSG_ERROR			0x00000008
-#define HAL_DEBUG_MSG_FATAL			0x00000010
+#define HAL_DEBUG_MSG_LOW			0x1
+#define HAL_DEBUG_MSG_MEDIUM			0x2
+#define HAL_DEBUG_MSG_HIGH			0x4
+#define HAL_DEBUG_MSG_ERROR			0x8
+#define HAL_DEBUG_MSG_FATAL			0x10
 #define MAX_PROFILE_COUNT			16
 
 #define HAL_MAX_MATRIX_COEFFS			9
 #define HAL_MAX_BIAS_COEFFS			3
 #define HAL_MAX_LIMIT_COEFFS			6
 
-enum vidc_error {
-	VIDC_ERR_NONE = 0x0,
-	VIDC_ERR_FAIL = 0x80000000,
-	VIDC_ERR_ALLOC_FAIL,
-	VIDC_ERR_ILLEGAL_OP,
-	VIDC_ERR_BAD_PARAM,
-	VIDC_ERR_BAD_HANDLE,
-	VIDC_ERR_NOT_SUPPORTED,
-	VIDC_ERR_BAD_STATE,
-	VIDC_ERR_MAX_CLIENTS,
-	VIDC_ERR_IFRAME_EXPECTED,
-	VIDC_ERR_HW_FATAL,
-	VIDC_ERR_BITSTREAM_ERR,
-	VIDC_ERR_INDEX_NOMORE,
-	VIDC_ERR_SEQHDR_PARSE_FAIL,
-	VIDC_ERR_INSUFFICIENT_BUFFER,
-	VIDC_ERR_BAD_POWER_STATE,
-	VIDC_ERR_NO_VALID_SESSION,
-	VIDC_ERR_TIMEOUT,
-	VIDC_ERR_CMDQFULL,
-	VIDC_ERR_START_CODE_NOT_FOUND,
-	VIDC_ERR_CLIENT_PRESENT = 0x90000001,
-	VIDC_ERR_CLIENT_FATAL,
-	VIDC_ERR_CMD_QUEUE_FULL,
-	VIDC_ERR_UNUSED = 0x10000000
+enum hal_error {
+	HAL_ERR_NONE = 0x0,
+	HAL_ERR_FAIL = 0x80000000,
+	HAL_ERR_ALLOC_FAIL,
+	HAL_ERR_ILLEGAL_OP,
+	HAL_ERR_BAD_PARAM,
+	HAL_ERR_BAD_HANDLE,
+	HAL_ERR_NOT_SUPPORTED,
+	HAL_ERR_BAD_STATE,
+	HAL_ERR_MAX_CLIENTS,
+	HAL_ERR_IFRAME_EXPECTED,
+	HAL_ERR_HW_FATAL,
+	HAL_ERR_BITSTREAM_ERR,
+	HAL_ERR_INDEX_NOMORE,
+	HAL_ERR_SEQHDR_PARSE_FAIL,
+	HAL_ERR_INSUFFICIENT_BUFFER,
+	HAL_ERR_BAD_POWER_STATE,
+	HAL_ERR_NO_VALID_SESSION,
+	HAL_ERR_TIMEOUT,
+	HAL_ERR_CMDQFULL,
+	HAL_ERR_START_CODE_NOT_FOUND,
+	HAL_ERR_CLIENT_PRESENT = 0x90000001,
+	HAL_ERR_CLIENT_FATAL,
+	HAL_ERR_CMD_QUEUE_FULL,
+	HAL_ERR_UNUSED = 0x10000000
 };
 
 #define HAL_BUFFER_MAX		0xb
@@ -84,7 +81,7 @@ enum vidc_error {
  * "buffer-type-tz-usage-table" for any affected target
  * in arch/arm/boot/dts/<arch>.dtsi
  */
-enum hal_buffer {
+enum hal_buffer_type {
 	HAL_BUFFER_NONE			= 0x0,
 	HAL_BUFFER_INPUT		= 0x1,
 	HAL_BUFFER_OUTPUT		= 0x2,
@@ -127,7 +124,7 @@ enum hal_extradata_id {
 };
 
 enum hal_property {
-	HAL_CONFIG_FRAME_RATE = 0x04000001,
+	HAL_CONFIG_FRAME_RATE	= 0x04000001,
 	HAL_PARAM_UNCOMPRESSED_FORMAT_SELECT,			//2
 	HAL_PARAM_UNCOMPRESSED_PLANE_ACTUAL_CONSTRAINTS_INFO,	//3
 	HAL_PARAM_UNCOMPRESSED_PLANE_ACTUAL_INFO,		//4
@@ -228,173 +225,173 @@ enum hal_property {
 	HAL_PARAM_VENC_HIER_P_HYBRID_MODE,			//63
 };
 
-enum hal_domain {
-	HAL_VIDEO_DOMAIN_VPE,
-	HAL_VIDEO_DOMAIN_ENCODER,
-	HAL_VIDEO_DOMAIN_DECODER,
-	HAL_UNUSED_DOMAIN = 0x10000000,
+enum hal_session_type {
+	HAL_VIDEO_SESSION_TYPE_VPE,
+	HAL_VIDEO_SESSION_TYPE_ENCODER,
+	HAL_VIDEO_SESSION_TYPE_DECODER,
+	HAL_UNUSED_SESSION_TYPE = 0x10000000,
 };
 
-enum multi_stream {
-	HAL_VIDEO_DECODER_NONE		= 0x00000000,
-	HAL_VIDEO_DECODER_PRIMARY	= 0x00000001,
-	HAL_VIDEO_DECODER_SECONDARY	= 0x00000002,
-	HAL_VIDEO_DECODER_BOTH_OUTPUTS	= 0x00000004,
+enum hal_multi_stream_type {
+	HAL_VIDEO_DECODER_NONE		= 0x0,
+	HAL_VIDEO_DECODER_PRIMARY	= 0x1,
+	HAL_VIDEO_DECODER_SECONDARY	= 0x2,
+	HAL_VIDEO_DECODER_BOTH_OUTPUTS	= 0x4,
 	HAL_VIDEO_UNUSED_OUTPUTS	= 0x10000000,
 };
 
 enum hal_core_capabilities {
-	HAL_VIDEO_ENCODER_ROTATION_CAPABILITY		= 0x00000001,
-	HAL_VIDEO_ENCODER_SCALING_CAPABILITY		= 0x00000002,
-	HAL_VIDEO_ENCODER_DEINTERLACE_CAPABILITY	= 0x00000004,
-	HAL_VIDEO_DECODER_MULTI_STREAM_CAPABILITY	= 0x00000008,
+	HAL_VIDEO_ENCODER_ROTATION_CAPABILITY		= 0x1,
+	HAL_VIDEO_ENCODER_SCALING_CAPABILITY		= 0x2,
+	HAL_VIDEO_ENCODER_DEINTERLACE_CAPABILITY	= 0x4,
+	HAL_VIDEO_DECODER_MULTI_STREAM_CAPABILITY	= 0x8,
 	HAL_VIDEO_UNUSED_CAPABILITY			= 0x10000000,
 };
 
 enum hal_default_properties {
-	HAL_VIDEO_DYNAMIC_BUF_MODE		= 0x00000001,
-	HAL_VIDEO_CONTINUE_DATA_TRANSFER	= 0x00000002,
+	HAL_VIDEO_DYNAMIC_BUF_MODE		= 0x1,
+	HAL_VIDEO_CONTINUE_DATA_TRANSFER	= 0x2,
 };
 
 enum hal_video_codec {
-	HAL_VIDEO_CODEC_UNKNOWN		= 0x00000000,
-	HAL_VIDEO_CODEC_MVC		= 0x00000001,
-	HAL_VIDEO_CODEC_H264		= 0x00000002,
-	HAL_VIDEO_CODEC_H263		= 0x00000004,
-	HAL_VIDEO_CODEC_MPEG1		= 0x00000008,
-	HAL_VIDEO_CODEC_MPEG2		= 0x00000010,
-	HAL_VIDEO_CODEC_MPEG4		= 0x00000020,
-	HAL_VIDEO_CODEC_DIVX_311	= 0x00000040,
-	HAL_VIDEO_CODEC_DIVX		= 0x00000080,
-	HAL_VIDEO_CODEC_VC1		= 0x00000100,
-	HAL_VIDEO_CODEC_SPARK		= 0x00000200,
-	HAL_VIDEO_CODEC_VP6		= 0x00000400,
-	HAL_VIDEO_CODEC_VP7		= 0x00000800,
-	HAL_VIDEO_CODEC_VP8		= 0x00001000,
-	HAL_VIDEO_CODEC_HEVC		= 0x00002000,
-	HAL_VIDEO_CODEC_HEVC_HYBRID	= 0x00004000,
+	HAL_VIDEO_CODEC_UNKNOWN		= 0x0,
+	HAL_VIDEO_CODEC_MVC		= 0x1,
+	HAL_VIDEO_CODEC_H264		= 0x2,
+	HAL_VIDEO_CODEC_H263		= 0x4,
+	HAL_VIDEO_CODEC_MPEG1		= 0x8,
+	HAL_VIDEO_CODEC_MPEG2		= 0x10,
+	HAL_VIDEO_CODEC_MPEG4		= 0x20,
+	HAL_VIDEO_CODEC_DIVX_311	= 0x40,
+	HAL_VIDEO_CODEC_DIVX		= 0x80,
+	HAL_VIDEO_CODEC_VC1		= 0x100,
+	HAL_VIDEO_CODEC_SPARK		= 0x200,
+	HAL_VIDEO_CODEC_VP6		= 0x400,
+	HAL_VIDEO_CODEC_VP7		= 0x800,
+	HAL_VIDEO_CODEC_VP8		= 0x1000,
+	HAL_VIDEO_CODEC_HEVC		= 0x2000,
+	HAL_VIDEO_CODEC_HEVC_HYBRID	= 0x4000,
 	HAL_UNUSED_CODEC		= 0x10000000,
 };
 
 enum hal_h263_profile {
-	HAL_H263_PROFILE_BASELINE		= 0x00000001,
-	HAL_H263_PROFILE_H320CODING		= 0x00000002,
-	HAL_H263_PROFILE_BACKWARDCOMPATIBLE	= 0x00000004,
-	HAL_H263_PROFILE_ISWV2			= 0x00000008,
-	HAL_H263_PROFILE_ISWV3			= 0x00000010,
-	HAL_H263_PROFILE_HIGHCOMPRESSION	= 0x00000020,
-	HAL_H263_PROFILE_INTERNET		= 0x00000040,
-	HAL_H263_PROFILE_INTERLACE		= 0x00000080,
-	HAL_H263_PROFILE_HIGHLATENCY		= 0x00000100,
+	HAL_H263_PROFILE_BASELINE		= 0x1,
+	HAL_H263_PROFILE_H320CODING		= 0x2,
+	HAL_H263_PROFILE_BACKWARDCOMPATIBLE	= 0x4,
+	HAL_H263_PROFILE_ISWV2			= 0x8,
+	HAL_H263_PROFILE_ISWV3			= 0x10,
+	HAL_H263_PROFILE_HIGHCOMPRESSION	= 0x20,
+	HAL_H263_PROFILE_INTERNET		= 0x40,
+	HAL_H263_PROFILE_INTERLACE		= 0x80,
+	HAL_H263_PROFILE_HIGHLATENCY		= 0x100,
 	HAL_UNUSED_H263_PROFILE			= 0x10000000,
 };
 
 enum hal_h263_level {
-	HAL_H263_LEVEL_10	= 0x00000001,
-	HAL_H263_LEVEL_20	= 0x00000002,
-	HAL_H263_LEVEL_30	= 0x00000004,
-	HAL_H263_LEVEL_40	= 0x00000008,
-	HAL_H263_LEVEL_45	= 0x00000010,
-	HAL_H263_LEVEL_50	= 0x00000020,
-	HAL_H263_LEVEL_60	= 0x00000040,
-	HAL_H263_LEVEL_70	= 0x00000080,
+	HAL_H263_LEVEL_10	= 0x1,
+	HAL_H263_LEVEL_20	= 0x2,
+	HAL_H263_LEVEL_30	= 0x4,
+	HAL_H263_LEVEL_40	= 0x8,
+	HAL_H263_LEVEL_45	= 0x10,
+	HAL_H263_LEVEL_50	= 0x20,
+	HAL_H263_LEVEL_60	= 0x40,
+	HAL_H263_LEVEL_70	= 0x80,
 	HAL_UNUSED_H263_LEVEL	= 0x10000000,
 };
 
 enum hal_mpeg2_profile {
-	HAL_MPEG2_PROFILE_SIMPLE	= 0x00000001,
-	HAL_MPEG2_PROFILE_MAIN		= 0x00000002,
-	HAL_MPEG2_PROFILE_422		= 0x00000004,
-	HAL_MPEG2_PROFILE_SNR		= 0x00000008,
-	HAL_MPEG2_PROFILE_SPATIAL	= 0x00000010,
-	HAL_MPEG2_PROFILE_HIGH		= 0x00000020,
+	HAL_MPEG2_PROFILE_SIMPLE	= 0x1,
+	HAL_MPEG2_PROFILE_MAIN		= 0x2,
+	HAL_MPEG2_PROFILE_422		= 0x4,
+	HAL_MPEG2_PROFILE_SNR		= 0x8,
+	HAL_MPEG2_PROFILE_SPATIAL	= 0x10,
+	HAL_MPEG2_PROFILE_HIGH		= 0x20,
 	HAL_UNUSED_MPEG2_PROFILE	= 0x10000000,
 };
 
 enum hal_mpeg2_level {
-	HAL_MPEG2_LEVEL_LL	= 0x00000001,
-	HAL_MPEG2_LEVEL_ML	= 0x00000002,
-	HAL_MPEG2_LEVEL_H14	= 0x00000004,
-	HAL_MPEG2_LEVEL_HL	= 0x00000008,
+	HAL_MPEG2_LEVEL_LL	= 0x1,
+	HAL_MPEG2_LEVEL_ML	= 0x2,
+	HAL_MPEG2_LEVEL_H14	= 0x4,
+	HAL_MPEG2_LEVEL_HL	= 0x8,
 	HAL_UNUSED_MEPG2_LEVEL	= 0x10000000,
 };
 
 enum hal_mpeg4_profile {
-	HAL_MPEG4_PROFILE_SIMPLE		= 0x00000001,
-	HAL_MPEG4_PROFILE_ADVANCEDSIMPLE	= 0x00000002,
-	HAL_MPEG4_PROFILE_CORE			= 0x00000004,
-	HAL_MPEG4_PROFILE_MAIN			= 0x00000008,
-	HAL_MPEG4_PROFILE_NBIT			= 0x00000010,
-	HAL_MPEG4_PROFILE_SCALABLETEXTURE	= 0x00000020,
-	HAL_MPEG4_PROFILE_SIMPLEFACE		= 0x00000040,
-	HAL_MPEG4_PROFILE_SIMPLEFBA		= 0x00000080,
-	HAL_MPEG4_PROFILE_BASICANIMATED		= 0x00000100,
-	HAL_MPEG4_PROFILE_HYBRID		= 0x00000200,
-	HAL_MPEG4_PROFILE_ADVANCEDREALTIME	= 0x00000400,
-	HAL_MPEG4_PROFILE_CORESCALABLE		= 0x00000800,
-	HAL_MPEG4_PROFILE_ADVANCEDCODING	= 0x00001000,
-	HAL_MPEG4_PROFILE_ADVANCEDCORE		= 0x00002000,
-	HAL_MPEG4_PROFILE_ADVANCEDSCALABLE	= 0x00004000,
-	HAL_MPEG4_PROFILE_SIMPLESCALABLE	= 0x00008000,
+	HAL_MPEG4_PROFILE_SIMPLE		= 0x1,
+	HAL_MPEG4_PROFILE_ADVANCEDSIMPLE	= 0x2,
+	HAL_MPEG4_PROFILE_CORE			= 0x4,
+	HAL_MPEG4_PROFILE_MAIN			= 0x8,
+	HAL_MPEG4_PROFILE_NBIT			= 0x10,
+	HAL_MPEG4_PROFILE_SCALABLETEXTURE	= 0x20,
+	HAL_MPEG4_PROFILE_SIMPLEFACE		= 0x40,
+	HAL_MPEG4_PROFILE_SIMPLEFBA		= 0x80,
+	HAL_MPEG4_PROFILE_BASICANIMATED		= 0x100,
+	HAL_MPEG4_PROFILE_HYBRID		= 0x200,
+	HAL_MPEG4_PROFILE_ADVANCEDREALTIME	= 0x400,
+	HAL_MPEG4_PROFILE_CORESCALABLE		= 0x800,
+	HAL_MPEG4_PROFILE_ADVANCEDCODING	= 0x1000,
+	HAL_MPEG4_PROFILE_ADVANCEDCORE		= 0x2000,
+	HAL_MPEG4_PROFILE_ADVANCEDSCALABLE	= 0x4000,
+	HAL_MPEG4_PROFILE_SIMPLESCALABLE	= 0x8000,
 	HAL_UNUSED_MPEG4_PROFILE		= 0x10000000,
 };
 
 enum hal_mpeg4_level {
-	HAL_MPEG4_LEVEL_0			= 0x00000001,
-	HAL_MPEG4_LEVEL_0b			= 0x00000002,
-	HAL_MPEG4_LEVEL_1			= 0x00000004,
-	HAL_MPEG4_LEVEL_2			= 0x00000008,
-	HAL_MPEG4_LEVEL_3			= 0x00000010,
-	HAL_MPEG4_LEVEL_4			= 0x00000020,
-	HAL_MPEG4_LEVEL_4a			= 0x00000040,
-	HAL_MPEG4_LEVEL_5			= 0x00000080,
-	HAL_MPEG4_LEVEL_VENDOR_START_UNUSED	= 0x7F000000,
-	HAL_MPEG4_LEVEL_6			= 0x7F000001,
-	HAL_MPEG4_LEVEL_7			= 0x7F000002,
-	HAL_MPEG4_LEVEL_8			= 0x7F000003,
-	HAL_MPEG4_LEVEL_9			= 0x7F000004,
-	HAL_MPEG4_LEVEL_3b			= 0x7F000005,
+	HAL_MPEG4_LEVEL_0			= 0x1,
+	HAL_MPEG4_LEVEL_0b			= 0x2,
+	HAL_MPEG4_LEVEL_1			= 0x4,
+	HAL_MPEG4_LEVEL_2			= 0x8,
+	HAL_MPEG4_LEVEL_3			= 0x10,
+	HAL_MPEG4_LEVEL_4			= 0x20,
+	HAL_MPEG4_LEVEL_4a			= 0x40,
+	HAL_MPEG4_LEVEL_5			= 0x80,
+	HAL_MPEG4_LEVEL_VENDOR_START_UNUSED	= 0x7f000000,
+	HAL_MPEG4_LEVEL_6			= 0x7f000001,
+	HAL_MPEG4_LEVEL_7			= 0x7f000002,
+	HAL_MPEG4_LEVEL_8			= 0x7f000003,
+	HAL_MPEG4_LEVEL_9			= 0x7f000004,
+	HAL_MPEG4_LEVEL_3b			= 0x7f000005,
 	HAL_UNUSED_MPEG4_LEVEL			= 0x10000000,
 };
 
 enum hal_h264_profile {
-	HAL_H264_PROFILE_BASELINE		= 0x00000001,
-	HAL_H264_PROFILE_MAIN			= 0x00000002,
-	HAL_H264_PROFILE_HIGH			= 0x00000004,
-	HAL_H264_PROFILE_EXTENDED		= 0x00000008,
-	HAL_H264_PROFILE_HIGH10			= 0x00000010,
-	HAL_H264_PROFILE_HIGH422		= 0x00000020,
-	HAL_H264_PROFILE_HIGH444		= 0x00000040,
-	HAL_H264_PROFILE_CONSTRAINED_BASE	= 0x00000080,
-	HAL_H264_PROFILE_CONSTRAINED_HIGH	= 0x00000100,
+	HAL_H264_PROFILE_BASELINE		= 0x1,
+	HAL_H264_PROFILE_MAIN			= 0x2,
+	HAL_H264_PROFILE_HIGH			= 0x4,
+	HAL_H264_PROFILE_EXTENDED		= 0x8,
+	HAL_H264_PROFILE_HIGH10			= 0x10,
+	HAL_H264_PROFILE_HIGH422		= 0x20,
+	HAL_H264_PROFILE_HIGH444		= 0x40,
+	HAL_H264_PROFILE_CONSTRAINED_BASE	= 0x80,
+	HAL_H264_PROFILE_CONSTRAINED_HIGH	= 0x100,
 	HAL_UNUSED_H264_PROFILE			= 0x10000000,
 };
 
 enum hal_h264_level {
-	HAL_H264_LEVEL_1	= 0x00000001,
-	HAL_H264_LEVEL_1b	= 0x00000002,
-	HAL_H264_LEVEL_11	= 0x00000004,
-	HAL_H264_LEVEL_12	= 0x00000008,
-	HAL_H264_LEVEL_13	= 0x00000010,
-	HAL_H264_LEVEL_2	= 0x00000020,
-	HAL_H264_LEVEL_21	= 0x00000040,
-	HAL_H264_LEVEL_22	= 0x00000080,
-	HAL_H264_LEVEL_3	= 0x00000100,
-	HAL_H264_LEVEL_31	= 0x00000200,
-	HAL_H264_LEVEL_32	= 0x00000400,
-	HAL_H264_LEVEL_4	= 0x00000800,
-	HAL_H264_LEVEL_41	= 0x00001000,
-	HAL_H264_LEVEL_42	= 0x00002000,
-	HAL_H264_LEVEL_5	= 0x00004000,
-	HAL_H264_LEVEL_51	= 0x00008000,
-	HAL_H264_LEVEL_52	= 0x00010000,
+	HAL_H264_LEVEL_1	= 0x1,
+	HAL_H264_LEVEL_1b	= 0x2,
+	HAL_H264_LEVEL_11	= 0x4,
+	HAL_H264_LEVEL_12	= 0x8,
+	HAL_H264_LEVEL_13	= 0x10,
+	HAL_H264_LEVEL_2	= 0x20,
+	HAL_H264_LEVEL_21	= 0x40,
+	HAL_H264_LEVEL_22	= 0x80,
+	HAL_H264_LEVEL_3	= 0x100,
+	HAL_H264_LEVEL_31	= 0x200,
+	HAL_H264_LEVEL_32	= 0x400,
+	HAL_H264_LEVEL_4	= 0x800,
+	HAL_H264_LEVEL_41	= 0x1000,
+	HAL_H264_LEVEL_42	= 0x2000,
+	HAL_H264_LEVEL_5	= 0x4000,
+	HAL_H264_LEVEL_51	= 0x8000,
+	HAL_H264_LEVEL_52	= 0x10000,
 	HAL_UNUSED_H264_LEVEL	= 0x10000000,
 };
 
 enum hal_hevc_profile {
-	HAL_HEVC_PROFILE_MAIN		= 0x00000001,
-	HAL_HEVC_PROFILE_MAIN10		= 0x00000002,
-	HAL_HEVC_PROFILE_MAIN_STILL_PIC	= 0x00000004,
+	HAL_HEVC_PROFILE_MAIN		= 0x1,
+	HAL_HEVC_PROFILE_MAIN10		= 0x2,
+	HAL_HEVC_PROFILE_MAIN_STILL_PIC	= 0x4,
 	HAL_UNUSED_HEVC_PROFILE		= 0x10000000,
 };
 
@@ -429,37 +426,37 @@ enum hal_hevc_level {
 };
 
 enum hal_hevc_tier {
-	HAL_HEVC_TIER_MAIN	= 0x00000001,
-	HAL_HEVC_TIER_HIGH	= 0x00000002,
+	HAL_HEVC_TIER_MAIN	= 0x1,
+	HAL_HEVC_TIER_HIGH	= 0x2,
 	HAL_UNUSED_HEVC_TIER	= 0x10000000,
 };
 
 enum hal_vpx_profile {
-	HAL_VPX_PROFILE_SIMPLE		= 0x00000001,
-	HAL_VPX_PROFILE_ADVANCED	= 0x00000002,
-	HAL_VPX_PROFILE_VERSION_0	= 0x00000004,
-	HAL_VPX_PROFILE_VERSION_1	= 0x00000008,
-	HAL_VPX_PROFILE_VERSION_2	= 0x00000010,
-	HAL_VPX_PROFILE_VERSION_3	= 0x00000020,
+	HAL_VPX_PROFILE_SIMPLE		= 0x1,
+	HAL_VPX_PROFILE_ADVANCED	= 0x2,
+	HAL_VPX_PROFILE_VERSION_0	= 0x4,
+	HAL_VPX_PROFILE_VERSION_1	= 0x8,
+	HAL_VPX_PROFILE_VERSION_2	= 0x10,
+	HAL_VPX_PROFILE_VERSION_3	= 0x20,
 	HAL_VPX_PROFILE_UNUSED		= 0x10000000,
 };
 
 enum hal_vc1_profile {
-	HAL_VC1_PROFILE_SIMPLE		= 0x00000001,
-	HAL_VC1_PROFILE_MAIN		= 0x00000002,
-	HAL_VC1_PROFILE_ADVANCED	= 0x00000004,
+	HAL_VC1_PROFILE_SIMPLE		= 0x1,
+	HAL_VC1_PROFILE_MAIN		= 0x2,
+	HAL_VC1_PROFILE_ADVANCED	= 0x4,
 	HAL_UNUSED_VC1_PROFILE		= 0x10000000,
 };
 
 enum hal_vc1_level {
-	HAL_VC1_LEVEL_LOW	= 0x00000001,
-	HAL_VC1_LEVEL_MEDIUM	= 0x00000002,
-	HAL_VC1_LEVEL_HIGH	= 0x00000004,
-	HAL_VC1_LEVEL_0		= 0x00000008,
-	HAL_VC1_LEVEL_1		= 0x00000010,
-	HAL_VC1_LEVEL_2		= 0x00000020,
-	HAL_VC1_LEVEL_3		= 0x00000040,
-	HAL_VC1_LEVEL_4		= 0x00000080,
+	HAL_VC1_LEVEL_LOW	= 0x1,
+	HAL_VC1_LEVEL_MEDIUM	= 0x2,
+	HAL_VC1_LEVEL_HIGH	= 0x4,
+	HAL_VC1_LEVEL_0		= 0x8,
+	HAL_VC1_LEVEL_1		= 0x10,
+	HAL_VC1_LEVEL_2		= 0x20,
+	HAL_VC1_LEVEL_3		= 0x40,
+	HAL_VC1_LEVEL_4		= 0x80,
 	HAL_UNUSED_VC1_LEVEL	= 0x10000000,
 };
 
@@ -471,60 +468,60 @@ enum hal_divx_format {
 };
 
 enum hal_divx_profile {
-	HAL_DIVX_PROFILE_QMOBILE	= 0x00000001,
-	HAL_DIVX_PROFILE_MOBILE		= 0x00000002,
-	HAL_DIVX_PROFILE_MT		= 0x00000004,
-	HAL_DIVX_PROFILE_HT		= 0x00000008,
-	HAL_DIVX_PROFILE_HD		= 0x00000010,
+	HAL_DIVX_PROFILE_QMOBILE	= 0x1,
+	HAL_DIVX_PROFILE_MOBILE		= 0x2,
+	HAL_DIVX_PROFILE_MT		= 0x4,
+	HAL_DIVX_PROFILE_HT		= 0x8,
+	HAL_DIVX_PROFILE_HD		= 0x10,
 	HAL_UNUSED_DIVX_PROFILE		= 0x10000000,
 };
 
 enum hal_mvc_profile {
-	HAL_MVC_PROFILE_STEREO_HIGH	= 0x00001000,
+	HAL_MVC_PROFILE_STEREO_HIGH	= 0x1000,
 	HAL_UNUSED_MVC_PROFILE		= 0x10000000,
 };
 
 enum hal_mvc_level {
-	HAL_MVC_LEVEL_1		= 0x00000001,
-	HAL_MVC_LEVEL_1b	= 0x00000002,
-	HAL_MVC_LEVEL_11	= 0x00000004,
-	HAL_MVC_LEVEL_12	= 0x00000008,
-	HAL_MVC_LEVEL_13	= 0x00000010,
-	HAL_MVC_LEVEL_2		= 0x00000020,
-	HAL_MVC_LEVEL_21	= 0x00000040,
-	HAL_MVC_LEVEL_22	= 0x00000080,
-	HAL_MVC_LEVEL_3		= 0x00000100,
-	HAL_MVC_LEVEL_31	= 0x00000200,
-	HAL_MVC_LEVEL_32	= 0x00000400,
-	HAL_MVC_LEVEL_4		= 0x00000800,
-	HAL_MVC_LEVEL_41	= 0x00001000,
-	HAL_MVC_LEVEL_42	= 0x00002000,
-	HAL_MVC_LEVEL_5		= 0x00004000,
-	HAL_MVC_LEVEL_51	= 0x00008000,
+	HAL_MVC_LEVEL_1		= 0x1,
+	HAL_MVC_LEVEL_1b	= 0x2,
+	HAL_MVC_LEVEL_11	= 0x4,
+	HAL_MVC_LEVEL_12	= 0x8,
+	HAL_MVC_LEVEL_13	= 0x10,
+	HAL_MVC_LEVEL_2		= 0x20,
+	HAL_MVC_LEVEL_21	= 0x40,
+	HAL_MVC_LEVEL_22	= 0x80,
+	HAL_MVC_LEVEL_3		= 0x100,
+	HAL_MVC_LEVEL_31	= 0x200,
+	HAL_MVC_LEVEL_32	= 0x400,
+	HAL_MVC_LEVEL_4		= 0x800,
+	HAL_MVC_LEVEL_41	= 0x1000,
+	HAL_MVC_LEVEL_42	= 0x2000,
+	HAL_MVC_LEVEL_5		= 0x4000,
+	HAL_MVC_LEVEL_51	= 0x8000,
 	HAL_UNUSED_MVC_LEVEL	= 0x10000000,
 };
 
-struct hal_frame_rate {
-	enum hal_buffer buffer_type;
-	u32 frame_rate;
+struct hal_framerate {
+	enum hal_buffer_type buffer_type;
+	u32 framerate;
 };
 
 enum hal_uncompressed_format {
-	HAL_COLOR_FORMAT_MONOCHROME	= 0x00000001,
-	HAL_COLOR_FORMAT_NV12		= 0x00000002,
-	HAL_COLOR_FORMAT_NV21		= 0x00000004,
-	HAL_COLOR_FORMAT_NV12_4x4TILE	= 0x00000008,
-	HAL_COLOR_FORMAT_NV21_4x4TILE	= 0x00000010,
-	HAL_COLOR_FORMAT_YUYV		= 0x00000020,
-	HAL_COLOR_FORMAT_YVYU		= 0x00000040,
-	HAL_COLOR_FORMAT_UYVY		= 0x00000080,
-	HAL_COLOR_FORMAT_VYUY		= 0x00000100,
-	HAL_COLOR_FORMAT_RGB565		= 0x00000200,
-	HAL_COLOR_FORMAT_BGR565		= 0x00000400,
-	HAL_COLOR_FORMAT_RGB888		= 0x00000800,
-	HAL_COLOR_FORMAT_BGR888		= 0x00001000,
-	HAL_COLOR_FORMAT_NV12_UBWC	= 0x00002000,
-	HAL_COLOR_FORMAT_NV12_TP10_UBWC	= 0x00004000,
+	HAL_COLOR_FORMAT_MONOCHROME	= 0x1,
+	HAL_COLOR_FORMAT_NV12		= 0x2,
+	HAL_COLOR_FORMAT_NV21		= 0x4,
+	HAL_COLOR_FORMAT_NV12_4x4TILE	= 0x8,
+	HAL_COLOR_FORMAT_NV21_4x4TILE	= 0x10,
+	HAL_COLOR_FORMAT_YUYV		= 0x20,
+	HAL_COLOR_FORMAT_YVYU		= 0x40,
+	HAL_COLOR_FORMAT_UYVY		= 0x80,
+	HAL_COLOR_FORMAT_VYUY		= 0x100,
+	HAL_COLOR_FORMAT_RGB565		= 0x200,
+	HAL_COLOR_FORMAT_BGR565		= 0x400,
+	HAL_COLOR_FORMAT_RGB888		= 0x800,
+	HAL_COLOR_FORMAT_BGR888		= 0x1000,
+	HAL_COLOR_FORMAT_NV12_UBWC	= 0x2000,
+	HAL_COLOR_FORMAT_NV12_TP10_UBWC	= 0x4000,
 	HAL_UNUSED_COLOR		= 0x10000000,
 };
 
@@ -535,45 +532,45 @@ enum hal_ssr_trigger_type {
 };
 
 enum vidc_extradata_type {
-	VIDC_EXTRADATA_NONE = 0x00000000,
-	VIDC_EXTRADATA_MB_QUANTIZATION = 0x00000001,
-	VIDC_EXTRADATA_INTERLACE_VIDEO = 0x00000002,
-	VIDC_EXTRADATA_VC1_FRAMEDISP = 0x00000003,
-	VIDC_EXTRADATA_VC1_SEQDISP = 0x00000004,
-	VIDC_EXTRADATA_TIMESTAMP = 0x00000005,
-	VIDC_EXTRADATA_S3D_FRAME_PACKING = 0x00000006,
-	VIDC_EXTRADATA_FRAME_RATE = 0x00000007,
-	VIDC_EXTRADATA_PANSCAN_WINDOW = 0x00000008,
-	VIDC_EXTRADATA_RECOVERY_POINT_SEI = 0x00000009,
-	VIDC_EXTRADATA_MPEG2_SEQDISP = 0x0000000D,
-	VIDC_EXTRADATA_STREAM_USERDATA = 0x0000000E,
-	VIDC_EXTRADATA_FRAME_QP = 0x0000000F,
-	VIDC_EXTRADATA_FRAME_BITS_INFO = 0x00000010,
-	VIDC_EXTRADATA_INPUT_CROP = 0x0700000E,
-	VIDC_EXTRADATA_DIGITAL_ZOOM = 0x07000010,
-	VIDC_EXTRADATA_MULTISLICE_INFO = 0x7F100000,
-	VIDC_EXTRADATA_NUM_CONCEALED_MB = 0x7F100001,
-	VIDC_EXTRADATA_INDEX = 0x7F100002,
-	VIDC_EXTRADATA_ASPECT_RATIO = 0x7F100003,
-	VIDC_EXTRADATA_METADATA_LTR = 0x7F100004,
-	VIDC_EXTRADATA_METADATA_FILLER = 0x7FE00002,
-	VIDC_EXTRADATA_METADATA_MBI = 0x7F100005,
+	VIDC_EXTRADATA_NONE			= 0x0,
+	VIDC_EXTRADATA_MB_QUANTIZATION		= 0x1,
+	VIDC_EXTRADATA_INTERLACE_VIDEO		= 0x2,
+	VIDC_EXTRADATA_VC1_FRAMEDISP		= 0x3,
+	VIDC_EXTRADATA_VC1_SEQDISP		= 0x4,
+	VIDC_EXTRADATA_TIMESTAMP		= 0x5,
+	VIDC_EXTRADATA_S3D_FRAME_PACKING	= 0x6,
+	VIDC_EXTRADATA_FRAME_RATE		= 0x7,
+	VIDC_EXTRADATA_PANSCAN_WINDOW		= 0x8,
+	VIDC_EXTRADATA_RECOVERY_POINT_SEI	= 0x9,
+	VIDC_EXTRADATA_MPEG2_SEQDISP		= 0xd,
+	VIDC_EXTRADATA_STREAM_USERDATA		= 0xe,
+	VIDC_EXTRADATA_FRAME_QP			= 0xf,
+	VIDC_EXTRADATA_FRAME_BITS_INFO		= 0x10,
+	VIDC_EXTRADATA_INPUT_CROP		= 0x0700000e,
+	VIDC_EXTRADATA_DIGITAL_ZOOM		= 0x07000010,
+	VIDC_EXTRADATA_MULTISLICE_INFO		= 0x7f100000,
+	VIDC_EXTRADATA_NUM_CONCEALED_MB		= 0x7f100001,
+	VIDC_EXTRADATA_INDEX			= 0x7f100002,
+	VIDC_EXTRADATA_ASPECT_RATIO		= 0x7f100003,
+	VIDC_EXTRADATA_METADATA_LTR		= 0x7f100004,
+	VIDC_EXTRADATA_METADATA_FILLER		= 0x7fe00002,
+	VIDC_EXTRADATA_METADATA_MBI		= 0x7f100005,
 };
 
 struct hal_uncompressed_format_select {
-	enum hal_buffer buffer_type;
+	enum hal_buffer_type buffer_type;
 	enum hal_uncompressed_format format;
 };
 
 struct hal_uncompressed_plane_actual {
-	int actual_stride;
+	u32 actual_stride;
 	u32 actual_plane_buffer_height;
 };
 
 struct hal_uncompressed_plane_actual_info {
-	enum hal_buffer buffer_type;
+	enum hal_buffer_type buffer_type;
 	u32 num_planes;
-	struct hal_uncompressed_plane_actual rg_plane_format[1];
+	struct hal_uncompressed_plane_actual plane_format[1];
 };
 
 struct hal_uncompressed_plane_constraints {
@@ -584,21 +581,21 @@ struct hal_uncompressed_plane_constraints {
 };
 
 struct hal_uncompressed_plane_actual_constraints_info {
-	enum hal_buffer buffer_type;
+	enum hal_buffer_type buffer_type;
 	u32 num_planes;
-	struct hal_uncompressed_plane_constraints rg_plane_format[1];
+	struct hal_uncompressed_plane_constraints plane_format[1];
 };
 
-struct hal_extra_data_header_config {
+struct hal_extradata_header_config {
 	u32 type;
-	enum hal_buffer buffer_type;
+	enum hal_buffer_type buffer_type;
 	u32 version;
 	u32 port_index;
 	u32 client_extradata_id;
 };
 
-struct hal_frame_size {
-	enum hal_buffer buffer_type;
+struct hal_framesize {
+	enum hal_buffer_type buffer_type;
 	u32 width;
 	u32 height;
 };
@@ -608,26 +605,26 @@ struct hal_enable {
 };
 
 struct hal_buffer_count_actual {
-	enum hal_buffer type;
+	enum hal_buffer_type type;
 	u32 count_actual;
 };
 
 struct hal_buffer_size_actual {
-	enum hal_buffer type;
+	enum hal_buffer_type type;
 	u32 size;
 };
 
 struct hal_buffer_display_hold_count_actual {
-	enum hal_buffer buffer_type;
+	enum hal_buffer_type buffer_type;
 	u32 hold_count;
 };
 
 enum hal_nal_stream_format {
-	HAL_NAL_FORMAT_STARTCODES		= 0x00000001,
-	HAL_NAL_FORMAT_ONE_NAL_PER_BUFFER	= 0x00000002,
-	HAL_NAL_FORMAT_ONE_BYTE_LENGTH		= 0x00000004,
-	HAL_NAL_FORMAT_TWO_BYTE_LENGTH		= 0x00000008,
-	HAL_NAL_FORMAT_FOUR_BYTE_LENGTH		= 0x00000010,
+	HAL_NAL_FORMAT_STARTCODES		= 0x1,
+	HAL_NAL_FORMAT_ONE_NAL_PER_BUFFER	= 0x2,
+	HAL_NAL_FORMAT_ONE_BYTE_LENGTH		= 0x4,
+	HAL_NAL_FORMAT_TWO_BYTE_LENGTH		= 0x8,
+	HAL_NAL_FORMAT_FOUR_BYTE_LENGTH		= 0x10,
 };
 
 enum hal_output_order {
@@ -641,8 +638,8 @@ enum hal_picture {
 	HAL_PICTURE_P		= 0x02,
 	HAL_PICTURE_B		= 0x04,
 	HAL_PICTURE_IDR		= 0x08,
-	HAL_FRAME_NOTCODED	= 0x7F002000,
-	HAL_FRAME_YUV		= 0x7F004000,
+	HAL_FRAME_NOTCODED	= 0x7f002000,
+	HAL_FRAME_YUV		= 0x7f004000,
 	HAL_UNUSED_PICT		= 0x10000000,
 };
 
@@ -656,7 +653,7 @@ struct hal_enable_picture {
 };
 
 struct hal_multi_stream {
-	enum hal_buffer buffer_type;
+	enum hal_buffer_type buffer_type;
 	u32 enable;
 	u32 width;
 	u32 height;
@@ -669,7 +666,7 @@ struct hal_display_picture_buffer_count {
 
 struct hal_mb_error_map {
 	u32 error_map_size;
-	u8 rg_error_map[1];
+	u8 error_map[1];
 };
 
 struct hal_request_iframe {
@@ -677,7 +674,7 @@ struct hal_request_iframe {
 };
 
 struct hal_bitrate {
-	u32 bit_rate;
+	u32 bitrate;
 	u32 layer_id;
 };
 
@@ -826,7 +823,7 @@ struct hal_debug_config {
 };
 
 struct hal_buffer_requirements {
-	enum hal_buffer type;
+	enum hal_buffer_type type;
 	u32 size;
 	u32 region_size;
 	u32 hold_count;
@@ -837,10 +834,10 @@ struct hal_buffer_requirements {
 };
 
 enum hal_priority {/* Priority increases with number */
-	HAL_PRIORITY_LOW = 10,
-	HAL_PRIOIRTY_MEDIUM = 20,
-	HAL_PRIORITY_HIGH = 30,
-	HAL_UNUSED_PRIORITY = 0x10000000,
+	HAL_PRIORITY_LOW	= 10,
+	HAL_PRIOIRTY_MEDIUM	= 20,
+	HAL_PRIORITY_HIGH	= 30,
+	HAL_UNUSED_PRIORITY	= 0x10000000,
 };
 
 struct hal_batch_info {
@@ -854,9 +851,9 @@ struct hal_metadata_pass_through {
 };
 
 struct hal_uncompressed_format_supported {
-	enum hal_buffer buffer_type;
+	enum hal_buffer_type buffer_type;
 	u32 format_entries;
-	u32 rg_format_info[1];
+	u32 format_info[1];
 };
 
 enum hal_interlace_format {
@@ -869,7 +866,7 @@ enum hal_interlace_format {
 };
 
 struct hal_interlace_format_supported {
-	enum hal_buffer buffer_type;
+	enum hal_buffer_type buffer_type;
 	enum hal_interlace_format format;
 };
 
@@ -881,10 +878,10 @@ enum hal_chroma_site {
 
 struct hal_properties_supported {
 	u32 num_properties;
-	u32 rg_properties[1];
+	u32 properties[1];
 };
 
-enum hal_capability {
+enum hal_capability_type {
 	HAL_CAPABILITY_FRAME_WIDTH,
 	HAL_CAPABILITY_FRAME_HEIGHT,
 	HAL_CAPABILITY_MBS_PER_FRAME,
@@ -897,29 +894,29 @@ enum hal_capability {
 	HAL_UNUSED_CAPABILITY = 0x10000000,
 };
 
-struct hal_capability_supported {
-	enum hal_capability capability_type;
+struct hal_capability  {
+	enum hal_capability_type type;
 	u32 min;
 	u32 max;
 	u32 step_size;
 };
 
-struct hal_capability_supported_info {
+struct hal_capabilities {
 	u32 num_capabilities;
-	struct hal_capability_supported rg_data[1];
+	struct hal_capability data[1];
 };
 
 struct hal_nal_stream_format_supported {
-	u32 nal_stream_format_supported;
+	u32 format;
 };
 
 struct hal_nal_stream_format_select {
-	u32 nal_stream_format_select;
+	u32 format;
 };
 
 struct hal_multi_view_format {
 	u32 views;
-	u32 rg_view_order[1];
+	u32 view_order[1];
 };
 
 enum hal_buffer_layout_type {
@@ -954,7 +951,7 @@ struct hal_timestamp_scale {
 
 struct hal_h264_vui_timing_info {
 	u32 enable;
-	u32 fixed_frame_rate;
+	u32 fixed_framerate;
 	u32 time_scale;
 };
 
@@ -979,21 +976,21 @@ struct hal_vpe_color_space_conversion {
 	u32 csc_limit[HAL_MAX_LIMIT_COEFFS];
 };
 
-enum vidc_resource_id {
+enum hal_resource_id {
 	VIDC_RESOURCE_NONE,
 	VIDC_RESOURCE_OCMEM,
 	VIDC_RESOURCE_VMEM,
 	VIDC_UNUSED_RESOURCE = 0x10000000,
 };
 
-struct vidc_resource_hdr {
-	enum vidc_resource_id resource_id;
+struct hal_resource_hdr {
+	enum hal_resource_id resource_id;
 	void *resource_handle;
 	u32 size;
 };
 
-struct vidc_buffer_addr_info {
-	enum hal_buffer buffer_type;
+struct hal_buffer_addr_info {
+	enum hal_buffer_type buffer_type;
 	u32 buffer_size;
 	u32 num_buffers;
 	u32 device_addr;
@@ -1005,10 +1002,10 @@ struct vidc_buffer_addr_info {
 /* Needs to be exactly the same as hfi_buffer_info */
 struct hal_buffer_info {
 	u32 buffer_addr;
-	u32 extra_data_addr;
+	u32 extradata_addr;
 };
 
-struct vidc_frame_plane_config {
+struct hal_frame_plane_config {
 	u32 left;
 	u32 top;
 	u32 width;
@@ -1017,13 +1014,13 @@ struct vidc_frame_plane_config {
 	u32 scan_lines;
 };
 
-struct vidc_uncompressed_frame_config {
-	struct vidc_frame_plane_config luma_plane;
-	struct vidc_frame_plane_config chroma_plane;
+struct hal_uncompressed_frame_config {
+	struct hal_frame_plane_config luma_plane;
+	struct hal_frame_plane_config chroma_plane;
 };
 
-struct vidc_frame_data {
-	enum hal_buffer buffer_type;
+struct hal_frame_data {
+	enum hal_buffer_type buffer_type;
 	u32 device_addr;
 	u32 extradata_addr;
 	int64_t timestamp;
@@ -1037,7 +1034,7 @@ struct vidc_frame_data {
 	u32 extradata_size;
 };
 
-struct vidc_seq_hdr {
+struct hal_seq_hdr {
 	u32 seq_hdr;
 	u32 seq_hdr_len;
 };
@@ -1058,13 +1055,13 @@ enum hal_event_type {
 };
 
 enum hal_buffer_mode_type {
-	HAL_BUFFER_MODE_STATIC = 0x001,
-	HAL_BUFFER_MODE_RING = 0x010,
-	HAL_BUFFER_MODE_DYNAMIC = 0x100,
+	HAL_BUFFER_MODE_STATIC	= 0x1,
+	HAL_BUFFER_MODE_RING	= 0x10,
+	HAL_BUFFER_MODE_DYNAMIC	= 0x100,
 };
 
 struct hal_buffer_alloc_mode {
-	enum hal_buffer type;
+	enum hal_buffer_type type;
 	enum hal_buffer_mode_type mode;
 };
 
@@ -1107,15 +1104,15 @@ struct buffer_requirements {
 };
 
 union hal_get_property {
-	struct hal_frame_rate frame_rate;
+	struct hal_framerate framerate;
 	struct hal_uncompressed_format_select format_select;
 	struct hal_uncompressed_plane_actual plane_actual;
 	struct hal_uncompressed_plane_actual_info plane_actual_info;
 	struct hal_uncompressed_plane_constraints plane_constraints;
 	struct hal_uncompressed_plane_actual_constraints_info
 						plane_constraints_info;
-	struct hal_extra_data_header_config extra_data_header_config;
-	struct hal_frame_size frame_size;
+	struct hal_extradata_header_config extradata_header_config;
+	struct hal_framesize framesize;
 	struct hal_enable enable;
 	struct hal_buffer_count_actual buffer_count_actual;
 	struct hal_extradata_enable extradata_enable;
@@ -1142,12 +1139,12 @@ union hal_get_property {
 	struct hal_debug_config debug_config;
 	struct hal_batch_info batch_info;
 	struct hal_metadata_pass_through metadata_pass_through;
-	struct hal_uncompressed_format_supported uncompressed_format_supported;
-	struct hal_interlace_format_supported interlace_format_supported;
-	struct hal_properties_supported properties_supported;
-	struct hal_capability_supported capability_supported;
-	struct hal_capability_supported_info capability_supported_info;
-	struct hal_nal_stream_format_supported nal_stream_format_supported;
+	struct hal_uncompressed_format_supported uncompressed_format;
+	struct hal_interlace_format_supported interlace_format;
+	struct hal_properties_supported properties;
+	struct hal_capability capability;
+	struct hal_capabilities capabilities;
+	struct hal_nal_stream_format_supported nal_stream_format;
 	struct hal_nal_stream_format_select nal_stream_format_select;
 	struct hal_multi_view_format multi_view_format;
 	struct hal_seq_header_info seq_header_info;
@@ -1164,75 +1161,28 @@ union hal_get_property {
 
 /* HAL Response */
 
-enum command_response {
-	/* SYSTEM COMMANDS_DONE*/
-	SYS_EVENT_CHANGE,
-	SYS_INIT_DONE,
-	SYS_SET_RESOURCE_DONE,
-	SYS_RELEASE_RESOURCE_DONE,
-	SYS_PING_ACK_DONE,
-	SYS_PC_PREP_DONE,
-	SYS_IDLE,
-	SYS_DEBUG,
-	SYS_WATCHDOG_TIMEOUT,
-	SYS_ERROR,
-	/* SESSION COMMANDS_DONE */
-	SESSION_LOAD_RESOURCE_DONE,
-	SESSION_INIT_DONE,
-	SESSION_END_DONE,
-	SESSION_ABORT_DONE,
-	SESSION_START_DONE,
-	SESSION_STOP_DONE,
-	SESSION_ETB_DONE,
-	SESSION_FTB_DONE,
-	SESSION_FLUSH_DONE,
-	SESSION_SUSPEND_DONE,
-	SESSION_RESUME_DONE,
-	SESSION_SET_PROP_DONE,
-	SESSION_GET_PROP_DONE,
-	SESSION_PARSE_SEQ_HDR_DONE,
-	SESSION_GET_SEQ_HDR_DONE,
-	SESSION_RELEASE_BUFFER_DONE,
-	SESSION_RELEASE_RESOURCE_DONE,
-	SESSION_PROPERTY_INFO,
-	SESSION_ERROR,
-	RESPONSE_UNUSED = 0x10000000,
-};
+/* Events */
+#define EVT_SYS_EVENT_CHANGE		1
+#define EVT_SYS_WATCHDOG_TIMEOUT	2
+#define EVT_SYS_ERROR			3
+#define EVT_SESSION_ERROR		4
 
-/* Event Callback structure */
+/* Event callback structure */
 
-struct vidc_cb_event {
-	u32 device_id;
-	u32 session_id;
-	enum vidc_error error;
+struct hal_cb_event {
+	enum hal_error error;
 	u32 height;
 	u32 width;
-	u32 hal_event_type;
+	enum hal_event_type event_type;
 	u32 packet_buffer;
-	u32 extra_data_buffer;
+	u32 extradata_buffer;
 	u32 profile;
 	u32 level;
 };
 
 /* Data callback structure */
 
-struct vidc_hal_ebd {
-	u32 timestamp_hi;
-	u32 timestamp_lo;
-	u32 flags;
-	enum vidc_error error;
-	u32 mark_target;
-	u32 mark_data;
-	u32 stats;
-	u32 offset;
-	u32 alloc_len;
-	u32 filled_len;
-	enum hal_picture picture_type;
-	u32 packet_buffer;
-	u32 extra_data_buffer;
-};
-
-struct vidc_hal_fbd {
+struct hal_fbd {
 	u32 stream_id;
 	u32 view_id;
 	u32 timestamp_hi;
@@ -1252,7 +1202,7 @@ struct vidc_hal_fbd {
 	u32 input_tag1;
 	enum hal_picture picture_type;
 	u32 packet_buffer1;
-	u32 extra_data_buffer;
+	u32 extradata_buffer;
 	u32 flags2;
 	u32 alloc_len2;
 	u32 filled_len2;
@@ -1263,101 +1213,266 @@ struct vidc_hal_fbd {
 	u32 filled_len3;
 	u32 offset3;
 	u32 packet_buffer3;
-	enum hal_buffer buffer_type;
+	enum hal_buffer_type buffer_type;
 };
 
-struct vidc_cb_data_done {
-	u32 device_id;
-	void *session_id;
-	enum vidc_error error;
-	u32 size;
-	u32 clnt_data;
-	union {
-		struct vidc_hal_ebd input_done;
-		struct vidc_hal_fbd output_done;
-	};
+struct hal_sys_init_done {
+	u32 enc_codecs;
+	u32 dec_codecs;
 };
 
-struct vidc_hal_sys_init_done {
-	u32 enc_codec_supported;
-	u32 dec_codec_supported;
-};
-
-struct vidc_hal_session_init_done {
-	struct hal_capability_supported width;
-	struct hal_capability_supported height;
-	struct hal_capability_supported mbs_per_frame;
-	struct hal_capability_supported mbs_per_sec;
-	struct hal_capability_supported frame_rate;
-	struct hal_capability_supported scale_x;
-	struct hal_capability_supported scale_y;
-	struct hal_capability_supported bitrate;
-	struct hal_capability_supported hier_p;
-	struct hal_capability_supported ltr_count;
-	struct hal_capability_supported secure_output2_threshold;
+struct hal_session_init_done {
+	struct hal_capability width;
+	struct hal_capability height;
+	struct hal_capability mbs_per_frame;
+	struct hal_capability mbs_per_sec;
+	struct hal_capability frame_rate;
+	struct hal_capability scale_x;
+	struct hal_capability scale_y;
+	struct hal_capability bitrate;
+	struct hal_capability hier_p;
+	struct hal_capability ltr_count;
+	struct hal_capability secure_output2_threshold;
 	struct hal_uncompressed_format_supported uncomp_format;
-	struct hal_interlace_format_supported HAL_format;
+	struct hal_interlace_format_supported interlace_format;
 	struct hal_nal_stream_format_supported nal_stream_format;
 	struct hal_profile_level_supported profile_level;
-	/* allocate and released memory for above */
 	struct hal_intra_refresh intra_refresh;
 	struct hal_seq_header_info seq_hdr_info;
 	enum hal_buffer_mode_type alloc_mode_out;
 };
 
-enum vidc_hfi_type {
-	VIDC_HFI_VENUS,
-	VIDC_HFI_Q6,
+enum vidc_ports {
+	OUTPUT_PORT,
+	CAPTURE_PORT,
+	MAX_PORT_NUM
 };
 
-#define call_hfi_op(hdev, op, args...)	\
-	(((hdev) && (hdev)->ops && (hdev)->ops->op) ?	\
-	((hdev)->ops->op(args)) : 0)
+enum session_type {
+	VIDC_ENCODER = 0,
+	VIDC_DECODER,
+	VIDC_MAX_DEVICES,
+};
 
-struct hfi_ops {
-	int (*core_init)(void *device);
-	int (*core_release)(void *device);
-	int (*core_ping)(void *device);
-	int (*core_trigger_ssr)(void *device, enum hal_ssr_trigger_type);
+/* define core states */
+#define CORE_UNINIT	0
+#define CORE_INIT	1
+#define CORE_INVALID	2
 
-	void *(*session_init)(void *device, void *session_id,
-			      enum hal_domain session_type,
-			      enum hal_video_codec codec_type);
-	int (*session_end)(void *session);
-	int (*session_abort)(void *session);
-	int (*session_clean)(void *sess);
-	int (*session_flush)(void *sess, enum hal_flush flush_mode);
-	int (*session_start)(void *sess);
-	int (*session_stop)(void *sess);
-	int (*session_etb)(void *sess, struct vidc_frame_data *input_frame);
-	int (*session_ftb)(void *sess, struct vidc_frame_data *output_frame);
-	int (*session_set_buffers)(void *sess,
-				   struct vidc_buffer_addr_info *bai);
-	int (*session_release_buffers)(void *sess,
-				       struct vidc_buffer_addr_info *bai);
-	int (*session_load_res)(void *sess);
-	int (*session_release_res)(void *sess);
-	int (*session_parse_seq_hdr)(void *sess, struct vidc_seq_hdr *seq_hdr);
-	int (*session_get_seq_hdr)(void *sess, struct vidc_seq_hdr *seq_hdr);
-	int (*session_set_property)(void *sess, enum hal_property ptype,
-				    void *pdata);
-	int (*session_get_property)(void *sess, enum hal_property ptype);
+/* define instance states */
+#define INST_INVALID			1
+#define INST_UNINIT			2
+#define INST_OPEN			3
+#define INST_LOAD_RESOURCES		4
+#define INST_START			5
+#define INST_STOP			6
+#define INST_RELEASE_RESOURCES		7
+#define INST_CLOSE			8
 
-	int (*get_stride_scanline)(int color_fmt, int width, int height,
-				   int *stride, int *scanlines);
-	int (*get_core_capabilities)(void);
-	int (*resume)(void *dev);
-	int (*suspend)(void *dev);
-	enum hal_default_properties (*get_default_properties)(void *dev);
+struct vidc_getprop_buf {
+	struct list_head list;
+	void *data;
+};
+
+struct vidc_core_capability {
+	struct hal_capability width;
+	struct hal_capability height;
+	struct hal_capability frame_rate;
+	struct hal_capability scale_x;
+	struct hal_capability scale_y;
+	struct hal_capability hier_p;
+	struct hal_capability ltr_count;
+	struct hal_capability mbs_per_frame;
+	struct hal_capability secure_output2_threshold;
+	enum hal_buffer_mode_type buffer_mode[MAX_PORT_NUM];
+	u32 pixelprocess_caps;
+	u32 capability_set;
+};
+
+enum vidc_hal_type {
+	VIDC_VENUS,
+	VIDC_Q6,
+};
+
+enum hfi_packetization_type {
+	HFI_PACKETIZATION_LEGACY,
+	HFI_PACKETIZATION_3XX,
+};
+
+#define call_hfi_op(hfi, op, args...)	\
+	(((hfi) && (hfi)->ops && (hfi)->ops->op) ?	\
+	((hfi)->ops->op(args)) : 0)
+
+struct hfi_core_ops {
+	int (*event_notify)(struct hfi_device *hfi, u32 event);
+};
+
+struct hfi_device_inst;
+
+struct hfi_inst_ops {
+	int (*empty_buf_done)(struct hfi_device_inst *inst, u32 addr,
+			      u32 bytesused, u32 data_offset, u32 flags);
+	int (*fill_buf_done)(struct hfi_device_inst *inst, u32 addr,
+			     u32 bytesused, u32 data_offset, u32 flags,
+			     struct timeval *ts);
+	int (*event_notify)(struct hfi_device_inst *inst, u32 event,
+			    struct hal_cb_event *data);
+};
+
+struct hfi_device_inst {
+	struct list_head list;
+
+	enum hal_session_type session_type;
+	enum hal_video_codec codec;
+	void *device;
+
+	struct mutex lock;
+	unsigned int state;
+	struct completion done;
+	unsigned int error;
+	struct list_head prop_list;
+	struct mutex prop_list_lock;
+	/* instance operations passed by outside world */
+	const struct hfi_inst_ops *ops;
+	void *ops_priv;
+
+	/* filled by session_init */
+	struct vidc_core_capability capability;
+	struct hal_session_init_done caps;
+
+	/* debug */
+	enum hal_property last_ptype;
 };
 
 struct hfi_device {
-	void *hfi_device_data;
+	struct device *dev;	/* mostly used for dev_xxx */
+	enum vidc_hal_type hfi_type;
+
+	struct mutex lock;
+	unsigned int state;
+	struct completion done;
+	unsigned int error;
+
+	/*
+	 * list of 'struct hfi_device_inst' instances which belong to
+	 * this hfi core device
+	 */
+	struct list_head instances;
+
+	/* core operations passed by outside world */
+	const struct hfi_core_ops *core_ops;
+
+	/* filled by sys core init */
+	u32 enc_codecs;
+	u32 dec_codecs;
+
+	/* internal hfi operations */
+	void *priv;
 	const struct hfi_ops *ops;
+	const struct hfi_packetization_ops *pkt_ops;
+	enum hfi_packetization_type packetization_type;
 };
 
-void *vidc_hfi_init(enum vidc_hfi_type hfi_type, u32 device_id,
-		    struct vidc_resources *res);
-void vidc_hfi_deinit(enum vidc_hfi_type hfi_type, struct hfi_device *hdev);
+struct hfi_ops {
+	int (*core_init)(struct hfi_device *hfi);
+	int (*core_deinit)(struct hfi_device *hfi);
+	int (*core_ping)(struct hfi_device *hfi, u32 cookie);
+	int (*core_trigger_ssr)(struct hfi_device *hfi,
+				enum hal_ssr_trigger_type);
+
+	int(*session_init)(struct hfi_device *hfi,
+			   struct hfi_device_inst *inst,
+			   enum hal_session_type session_type,
+			   enum hal_video_codec codec);
+	int (*session_end)(struct hfi_device_inst *inst);
+	int (*session_abort)(struct hfi_device_inst *inst);
+	int (*session_flush)(struct hfi_device_inst *inst,
+			     enum hal_flush flush_mode);
+	int (*session_start)(struct hfi_device_inst *inst);
+	int (*session_stop)(struct hfi_device_inst *inst);
+	int (*session_etb)(struct hfi_device_inst *inst,
+			   struct hal_frame_data *input_frame);
+	int (*session_ftb)(struct hfi_device_inst *inst,
+			   struct hal_frame_data *output_frame);
+	int (*session_set_buffers)(struct hfi_device_inst *inst,
+				   struct hal_buffer_addr_info *bai);
+	int (*session_release_buffers)(struct hfi_device_inst *inst,
+				       struct hal_buffer_addr_info *bai);
+	int (*session_load_res)(struct hfi_device_inst *inst);
+	int (*session_release_res)(struct hfi_device_inst *inst);
+	int (*session_parse_seq_hdr)(struct hfi_device_inst *inst,
+				     struct hal_seq_hdr *seq_hdr);
+	int (*session_get_seq_hdr)(struct hfi_device_inst *inst,
+				   struct hal_seq_hdr *seq_hdr);
+	int (*session_set_property)(struct hfi_device_inst *inst,
+				    enum hal_property ptype, void *pdata);
+	int (*session_get_property)(struct hfi_device_inst *inst,
+				    enum hal_property ptype);
+
+	void (*get_stride_scanline)(int color_fmt, int width, int height,
+				    int *stride, int *scanlines);
+	int (*get_core_capabilities)(void);
+	int (*resume)(struct hfi_device *hfi);
+	int (*suspend)(struct hfi_device *hfi);
+	enum hal_default_properties
+		(*get_default_properties)(struct hfi_device *hfi);
+
+	/* interrupt operations */
+	irqreturn_t (*isr)(int irq, struct hfi_device *hfi);
+	irqreturn_t (*isr_thread)(int irq, struct hfi_device *hfi);
+};
+
+static inline void *to_hfi_priv(struct hfi_device *hfi)
+{
+	return hfi->priv;
+}
+
+int vidc_hfi_create(struct hfi_device *hfi, struct vidc_resources *res);
+void vidc_hfi_destroy(struct hfi_device *hfi);
+
+int vidc_hfi_core_init(struct hfi_device *hfi);
+int vidc_hfi_core_deinit(struct hfi_device *hfi);
+int vidc_hfi_core_suspend(struct hfi_device *hfi);
+int vidc_hfi_core_trigger_ssr(struct hfi_device *hfi,
+			      enum hal_ssr_trigger_type type);
+int vidc_hfi_core_ping(struct hfi_device *hfi);
+
+struct hfi_device_inst *vidc_hfi_session_create(struct hfi_device *hfi,
+						const struct hfi_inst_ops *ops,
+						void *ops_priv);
+void vidc_hfi_session_destroy(struct hfi_device *hfi,
+			      struct hfi_device_inst *inst);
+int vidc_hfi_session_init(struct hfi_device *hfi, struct hfi_device_inst *inst,
+			  u32 pixfmt, enum session_type type);
+int vidc_hfi_session_deinit(struct hfi_device *hfi,
+			    struct hfi_device_inst *inst);
+int vidc_hfi_session_start(struct hfi_device *hfi,
+			   struct hfi_device_inst *inst);
+int vidc_hfi_session_stop(struct hfi_device *hfi, struct hfi_device_inst *inst);
+int vidc_hfi_session_abort(struct hfi_device *hfi,
+			   struct hfi_device_inst *inst);
+int vidc_hfi_session_load_res(struct hfi_device *hfi,
+			      struct hfi_device_inst *inst);
+int vidc_hfi_session_release_res(struct hfi_device *hfi,
+				 struct hfi_device_inst *inst);
+int vidc_hfi_session_flush(struct hfi_device *hfi,
+			   struct hfi_device_inst *inst);
+int vidc_hfi_session_set_buffers(struct hfi_device *hfi,
+				 struct hfi_device_inst *inst,
+				 struct hal_buffer_addr_info *bai);
+int vidc_hfi_session_release_buffers(struct hfi_device *hfi,
+				     struct hfi_device_inst *inst,
+				     struct hal_buffer_addr_info *bai);
+int vidc_hfi_session_get_property(struct hfi_device *hfi,
+				  struct hfi_device_inst *inst,
+				  enum hal_property ptype,
+				  union hal_get_property *hprop);
+int vidc_hfi_session_set_property(struct hfi_device *hfi,
+				  struct hfi_device_inst *inst,
+				  enum hal_property ptype, void *pdata);
+int vidc_hfi_session_etb(struct hfi_device *hfi, struct hfi_device_inst *inst,
+			 struct hal_frame_data *fdata);
+int vidc_hfi_session_ftb(struct hfi_device *hfi, struct hfi_device_inst *inst,
+			 struct hal_frame_data *fdata);
 
 #endif /*__VIDC_HFI_API_H__ */

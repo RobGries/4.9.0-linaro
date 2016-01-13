@@ -13,7 +13,7 @@
 #ifndef _MSM_VDEC_H_
 #define _MSM_VDEC_H_
 
-#include "msm_vidc_internal.h"
+#include "internal.h"
 
 int vdec_init(struct vidc_core *core, struct video_device *dec);
 void vdec_deinit(struct vidc_core *core, struct video_device *dec);

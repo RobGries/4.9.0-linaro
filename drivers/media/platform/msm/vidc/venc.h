@@ -13,7 +13,7 @@
 #ifndef _MSM_VENC_H_
 #define _MSM_VENC_H_
 
-#include "msm_vidc_internal.h"
+#include "internal.h"
 
 int venc_init(struct vidc_core *core, struct video_device *enc);
 void venc_deinit(struct vidc_core *core, struct video_device *enc);

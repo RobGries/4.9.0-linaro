@@ -14,6 +14,7 @@
 #ifndef __MSM_VIDC_RESOURCES_H__
 #define __MSM_VIDC_RESOURCES_H__
 
+#include <linux/clk.h>
 #include <linux/platform_device.h>
 
 struct load_freq_table {
@@ -65,15 +66,12 @@ struct vidc_resources {
 	u32 load_freq_tbl_size;
 	struct reg_set reg_set;
 	u32 max_load;
-	struct platform_device *pdev;
 	struct clock_set clock_set;
 	bool sw_power_collapsible;
 	bool sys_idle_indicator;
-	struct list_head context_banks;
 	const char *hfi_version;
 };
 
-extern unsigned int vidc_pwr_collapse_delay;
 struct vidc_core;
 
 int get_platform_resources(struct vidc_core *);

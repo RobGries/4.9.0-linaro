@@ -16,12 +16,9 @@
 #ifndef __VIDC_MSM_SMEM_H__
 #define __VIDC_MSM_SMEM_H__
 
+#include <linux/device.h>
 #include <linux/dma-attrs.h>
 #include <linux/scatterlist.h>
-
-#include "msm_vidc_resources.h"
-#include "msm_vidc.h"
-#include "hfi/vidc_hfi_api.h"
 
 enum smem_prop {
 	SMEM_CACHED = BIT(0),
@@ -40,28 +37,23 @@ struct smem {
 	dma_addr_t da;
 	unsigned long flags;
 	void *smem_priv;
-	enum hal_buffer buffer_type;
 	struct dma_attrs attrs;
 	struct device *iommu_dev;
 	struct sg_table *sgt;
 };
 
 struct smem_client {
-	void *clnt;
-	struct vidc_resources *res;
+	struct device *dev;
 };
 
-struct smem_client *smem_new_client(void *platform_resources);
+struct smem_client *smem_new_client(struct device *dev);
 void smem_delete_client(struct smem_client *clt);
 
 struct smem *smem_alloc(struct smem_client *clt, size_t size, u32 align,
-			u32 flags, enum hal_buffer buffer_type, int map_kernel);
+			u32 flags, int map_kernel);
 void smem_free(struct smem_client *clt, struct smem *mem);
 
 int smem_cache_operations(struct smem_client *clt, struct smem *mem,
 			  enum smem_cache_ops);
-struct context_bank_info *
-smem_get_context_bank(struct smem_client *clt, bool is_secure,
-		      enum hal_buffer buffer_type);
 
 #endif /* __VIDC_MSM_SMEM_H__ */

@@ -11,7 +11,6 @@
  *
  */
 
-#include <asm/dma-iommu.h>
 #include <linux/dma-attrs.h>
 #include <linux/dma-direction.h>
 #include <linux/iommu.h>
@@ -19,14 +18,13 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 
-#include "msm_smem.h"
-#include "msm_vidc_debug.h"
-#include "msm_vidc_resources.h"
+#include "smem.h"
+#include "resources.h"
 
 static int alloc_dma_mem(struct smem_client *client, size_t size, u32 align,
-			 u32 flags, enum hal_buffer buffer_type,
-			 struct smem *mem, int map_kernel)
+			 u32 flags, struct smem *mem, int map_kernel)
 {
+	struct device *dev = client->dev;
 	int ret;
 
 	if (align > 1) {
@@ -36,16 +34,12 @@ static int alloc_dma_mem(struct smem_client *client, size_t size, u32 align,
 
 	size = ALIGN(size, SZ_4K);
 
-	dprintk(VIDC_DBG, "%s: type: %x, size %zu\n", __func__, buffer_type,
-		size);
-
 	mem->flags = flags;
-	mem->buffer_type = buffer_type;
 	mem->size = size;
 	mem->kvaddr = NULL;
 	mem->smem_priv = NULL;
 
-	mem->iommu_dev = msm_iommu_get_ctx("venus_ns");
+	mem->iommu_dev = dev;
 	if (IS_ERR(mem->iommu_dev))
 		return PTR_ERR(mem->iommu_dev);
 
@@ -56,8 +50,10 @@ static int alloc_dma_mem(struct smem_client *client, size_t size, u32 align,
 
 	mem->kvaddr = dma_alloc_attrs(mem->iommu_dev, size, &mem->da,
 				      GFP_KERNEL, &mem->attrs);
-	if (!mem->kvaddr)
+	if (!mem->kvaddr) {
+		dev_err(dev, "cannot allocate dma memory\n");
 		return -ENOMEM;
+	}
 
 	mem->sgt = kmalloc(sizeof(*mem->sgt), GFP_KERNEL);
 	if (!mem->sgt) {
@@ -83,6 +79,7 @@ static void free_dma_mem(struct smem_client *client, struct smem *mem)
 {
 	dma_free_attrs(mem->iommu_dev, mem->size, mem->kvaddr,
 		       mem->da, &mem->attrs);
+	sg_free_table(mem->sgt);
 	kfree(mem->sgt);
 }
 
@@ -113,17 +110,15 @@ int smem_cache_operations(struct smem_client *client, struct smem *mem,
 	return sync_dma_cache(mem, cache_op);
 }
 
-struct smem_client *smem_new_client(void *platform_resources)
+struct smem_client *smem_new_client(struct device *dev)
 {
-	struct vidc_resources *res = platform_resources;
 	struct smem_client *client;
 
 	client = kzalloc(sizeof(*client), GFP_KERNEL);
 	if (!client)
 		return ERR_PTR(-ENOMEM);
 
-	client->clnt = NULL;
-	client->res = res;
+	client->dev = dev;
 
 	return client;
 }
@@ -137,7 +132,7 @@ void smem_delete_client(struct smem_client *client)
 }
 
 struct smem *smem_alloc(struct smem_client *client, size_t size, u32 align,
-			u32 flags, enum hal_buffer buffer_type, int map_kernel)
+			u32 flags, int map_kernel)
 {
 	struct smem *mem;
 	int ret;
@@ -149,8 +144,7 @@ struct smem *smem_alloc(struct smem_client *client, size_t size, u32 align,
 	if (!mem)
 		return ERR_PTR(-ENOMEM);
 
-	ret = alloc_dma_mem(client, size, align, flags, buffer_type,
-			    mem, map_kernel);
+	ret = alloc_dma_mem(client, size, align, flags, mem, map_kernel);
 	if (ret) {
 		kfree(mem);
 		return ERR_PTR(ret);
@@ -167,25 +161,3 @@ void smem_free(struct smem_client *client, struct smem *mem)
 	free_dma_mem(client, mem);
 	kfree(mem);
 };
-
-struct context_bank_info *
-smem_get_context_bank(struct smem_client *client, bool is_secure,
-		      enum hal_buffer buffer_type)
-{
-	struct context_bank_info *cb = NULL, *match = NULL;
-
-	if (!client) {
-		dprintk(VIDC_ERR, "%s - invalid params\n", __func__);
-		return NULL;
-	}
-
-	list_for_each_entry(cb, &client->res->context_banks, list) {
-		if (cb->is_secure == is_secure &&
-		    cb->buffer_type & buffer_type) {
-			match = cb;
-			break;
-		}
-	}
-
-	return match;
-}

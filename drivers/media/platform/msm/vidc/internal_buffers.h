@@ -1,4 +1,6 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2015 Linaro Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -11,9 +13,14 @@
  *
  */
 
-#ifndef _MSM_VIDC_H_
-#define _MSM_VIDC_H_
+#ifndef _MSM_VIDC_INTERNAL_BUFFERS_H_
+#define _MSM_VIDC_INTERNAL_BUFFERS_H_
 
+#include "common.h"
 
+int scratch_set_buffers(struct vidc_inst *);
+int persist_set_buffers(struct vidc_inst *);
+int persist_release_buffers(struct vidc_inst *);
+int scratch_release_buffers(struct vidc_inst *, bool);
 
-#endif
+#endif /* _MSM_VIDC_INTERNAL_BUFFERS_H_ */

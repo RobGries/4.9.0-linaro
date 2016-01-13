@@ -13,19 +13,24 @@
  *
  */
 
-#include "msm_smem.h"
-#include "msm_internal-buffers.h"
-#include "msm_vidc_debug.h"
-#include "msm_hfi_interface.h"
+#include "smem.h"
+#include "internal_buffers.h"
 
-static enum hal_buffer
-scratch_buf_sufficient(struct vidc_inst *inst, enum hal_buffer buffer_type)
+struct vidc_internal_buf {
+	struct list_head list;
+	enum hal_buffer_type type;
+	struct smem *smem;
+};
+
+static enum hal_buffer_type
+scratch_buf_sufficient(struct vidc_inst *inst, enum hal_buffer_type buffer_type)
 {
+	struct device *dev = inst->core->dev;
 	struct hal_buffer_requirements *bufreq;
 	struct vidc_internal_buf *buf;
 	int count = 0;
 
-	bufreq = get_buff_req_buffer(inst, buffer_type);
+	bufreq = vidc_get_buff_req_buffer(inst, buffer_type);
 	if (!bufreq)
 		goto not_sufficient;
 
@@ -33,7 +38,7 @@ scratch_buf_sufficient(struct vidc_inst *inst, enum hal_buffer buffer_type)
 	mutex_lock(&inst->scratchbufs.lock);
 	list_for_each_entry(buf, &inst->scratchbufs.list, list) {
 		if (!buf->smem) {
-			dprintk(VIDC_ERR, "%s: invalid buf handle\n", __func__);
+			dev_err(dev, "%s: invalid buf handle\n", __func__);
 			mutex_unlock(&inst->scratchbufs.lock);
 			goto not_sufficient;
 		}
@@ -47,7 +52,7 @@ scratch_buf_sufficient(struct vidc_inst *inst, enum hal_buffer buffer_type)
 	if (count != bufreq->count_actual)
 		goto not_sufficient;
 
-	dprintk(VIDC_DBG,
+	dev_dbg(dev,
 		"Existing scratch buffer is sufficient for buffer type %#x\n",
 		buffer_type);
 
@@ -57,53 +62,52 @@ not_sufficient:
 	return HAL_BUFFER_NONE;
 }
 
-static int set_internal_buf_on_fw(struct vidc_inst *inst,
-				  enum hal_buffer buffer_type,
+static int internal_set_buf_on_fw(struct vidc_inst *inst,
+				  enum hal_buffer_type buffer_type,
 				  struct smem *mem, bool reuse)
 {
-	struct hfi_device *hdev = inst->core->hfidev;
-	struct vidc_buffer_addr_info bai = {0};
+	struct device *dev = inst->core->dev;
+	struct hfi_device *hfi = &inst->core->hfi;
+	struct hal_buffer_addr_info bai = {0};
 	int ret;
 
 	ret = smem_cache_operations(inst->mem_client, mem, SMEM_CACHE_CLEAN);
 	if (ret)
-		dprintk(VIDC_WARN,
-			"Failed to clean cache. May cause undefined behavior\n");
+		dev_warn(dev, "Failed to clean cache. May cause undefined behavior\n");
 
 	bai.buffer_size = mem->size;
 	bai.buffer_type = buffer_type;
 	bai.num_buffers = 1;
 	bai.device_addr = mem->da;
 
-	ret = call_hfi_op(hdev, session_set_buffers, inst->session, &bai);
+	dev_dbg(dev, "internal buf: addr:%x (%pa), size:%u, type:%d\n",
+		bai.device_addr, &mem->da, bai.buffer_size, bai.buffer_type);
+
+	ret = vidc_hfi_session_set_buffers(hfi, inst->hfi_inst, &bai);
 	if (ret) {
-		dprintk(VIDC_ERR, "session_set_buffers failed\n");
+		dev_err(dev, "set session buffers failed\n");
 		return ret;
 	}
 
 	return 0;
 }
 
-static int alloc_and_set(struct vidc_inst *inst,
-			 struct hal_buffer_requirements *bufreq,
-			 struct vidc_list *buf_list)
+static int internal_alloc_and_set(struct vidc_inst *inst,
+				  struct hal_buffer_requirements *bufreq,
+				  struct vidc_list *buf_list)
 {
 	struct smem *smem;
 	struct vidc_internal_buf *buf;
-	u32 smem_flags = 0;
+	u32 flags = 0;
 	unsigned int i;
 	int ret = 0;
 
 	if (!bufreq->size)
 		return 0;
 
-	if (inst->flags & VIDC_SECURE)
-		smem_flags |= SMEM_SECURE;
-
 	for (i = 0; i < bufreq->count_actual; i++) {
 
-		smem = smem_alloc(inst->mem_client, bufreq->size, 1, smem_flags,
-				  bufreq->type, 0);
+		smem = smem_alloc(inst->mem_client, bufreq->size, 1, flags, 0);
 		if (IS_ERR(smem)) {
 			ret = PTR_ERR(smem);
 			goto err_no_mem;
@@ -118,7 +122,7 @@ static int alloc_and_set(struct vidc_inst *inst,
 		buf->smem = smem;
 		buf->type = bufreq->type;
 
-		ret = set_internal_buf_on_fw(inst, bufreq->type, smem, false);
+		ret = internal_set_buf_on_fw(inst, bufreq->type, smem, false);
 		if (ret)
 			goto fail_set_buffers;
 
@@ -138,8 +142,9 @@ err_no_mem:
 }
 
 static bool
-reuse_scratch_buffer(struct vidc_inst *inst, enum hal_buffer buffer_type)
+scratch_reuse_buffer(struct vidc_inst *inst, enum hal_buffer_type buffer_type)
 {
+	struct device *dev = inst->core->dev;
 	struct vidc_internal_buf *buf;
 	bool reused = false;
 	int ret = 0;
@@ -154,11 +159,10 @@ reuse_scratch_buffer(struct vidc_inst *inst, enum hal_buffer buffer_type)
 		if (buf->type != buffer_type)
 			continue;
 
-		ret = set_internal_buf_on_fw(inst, buffer_type, buf->smem,
+		ret = internal_set_buf_on_fw(inst, buffer_type, buf->smem,
 					     true);
 		if (ret) {
-			dprintk(VIDC_ERR,
-				"%s: session_set_buffers failed\n", __func__);
+			dev_err(dev, "set internal buffers failed\n");
 			reused = false;
 			break;
 		}
@@ -170,36 +174,38 @@ reuse_scratch_buffer(struct vidc_inst *inst, enum hal_buffer buffer_type)
 	return reused;
 }
 
-static int set_scratch_buffer(struct vidc_inst *inst, enum hal_buffer type)
+static int scratch_set_buffer(struct vidc_inst *inst, enum hal_buffer_type type)
 {
+	struct device *dev = inst->core->dev;
 	struct hal_buffer_requirements *bufreq;
 
-	bufreq = get_buff_req_buffer(inst, type);
+	bufreq = vidc_get_buff_req_buffer(inst, type);
 	if (!bufreq)
 		return 0;
 
-	dprintk(VIDC_DBG, "%s: num:%d, size:%d\n", __func__,
+	dev_dbg(dev, "scratch: num:%d, size:%d\n",
 		bufreq->count_actual, bufreq->size);
 
 	/*
 	 * Try reusing existing scratch buffers first.
 	 * If it's not possible to reuse, allocate new buffers.
 	 */
-	if (reuse_scratch_buffer(inst, type))
+	if (scratch_reuse_buffer(inst, type))
 		return 0;
 
-	return alloc_and_set(inst, bufreq, &inst->scratchbufs);
+	return internal_alloc_and_set(inst, bufreq, &inst->scratchbufs);
 }
 
-static int set_persist_buffer(struct vidc_inst *inst, enum hal_buffer type)
+static int persist_set_buffer(struct vidc_inst *inst, enum hal_buffer_type type)
 {
+	struct device *dev = inst->core->dev;
 	struct hal_buffer_requirements *bufreq;
 
-	bufreq = get_buff_req_buffer(inst, type);
+	bufreq = vidc_get_buff_req_buffer(inst, type);
 	if (!bufreq)
 		return 0;
 
-	dprintk(VIDC_DBG, "persist: num = %d, size = %d\n",
+	dev_dbg(dev, "persist: num = %d, size = %d\n",
 		bufreq->count_actual, bufreq->size);
 
 	mutex_lock(&inst->persistbufs.lock);
@@ -209,15 +215,16 @@ static int set_persist_buffer(struct vidc_inst *inst, enum hal_buffer type)
 	}
 	mutex_unlock(&inst->persistbufs.lock);
 
-	return alloc_and_set(inst, bufreq, &inst->persistbufs);
+	return internal_alloc_and_set(inst, bufreq, &inst->persistbufs);
 }
 
-int release_scratch_buffers(struct vidc_inst *inst, bool reuse)
+int scratch_release_buffers(struct vidc_inst *inst, bool reuse)
 {
+	struct hfi_device *hfi = &inst->core->hfi;
 	struct smem *smem;
-	struct vidc_internal_buf *buf, *dummy;
-	struct vidc_buffer_addr_info bai = {0};
-	enum hal_buffer sufficiency = HAL_BUFFER_NONE;
+	struct vidc_internal_buf *buf, *n;
+	struct hal_buffer_addr_info bai = {0};
+	enum hal_buffer_type sufficiency = HAL_BUFFER_NONE;
 	int ret = 0;
 
 	if (reuse) {
@@ -232,7 +239,7 @@ int release_scratch_buffers(struct vidc_inst *inst, bool reuse)
 	}
 
 	mutex_lock(&inst->scratchbufs.lock);
-	list_for_each_entry_safe(buf, dummy, &inst->scratchbufs.list, list) {
+	list_for_each_entry_safe(buf, n, &inst->scratchbufs.list, list) {
 		if (!buf->smem) {
 			ret = -EINVAL;
 			goto exit;
@@ -246,7 +253,8 @@ int release_scratch_buffers(struct vidc_inst *inst, bool reuse)
 		bai.response_required = true;
 
 		mutex_unlock(&inst->scratchbufs.lock);
-		ret = hfi_session_release_buffers(inst, &bai);
+		ret = vidc_hfi_session_release_buffers(hfi, inst->hfi_inst,
+							&bai);
 		mutex_lock(&inst->scratchbufs.lock);
 
 		/* If scratch buffers can be reused, do not free the buffers */
@@ -265,18 +273,16 @@ exit:
 	return ret;
 }
 
-int release_persist_buffers(struct vidc_inst *inst)
+int persist_release_buffers(struct vidc_inst *inst)
 {
+	struct hfi_device *hfi = &inst->core->hfi;
 	struct smem *smem;
-	struct list_head *ptr, *next;
-	struct vidc_internal_buf *buf;
-	struct vidc_buffer_addr_info bai = {0};
+	struct vidc_internal_buf *buf, *n;
+	struct hal_buffer_addr_info bai = {0};
 	int ret = 0;
 
 	mutex_lock(&inst->persistbufs.lock);
-	list_for_each_safe(ptr, next, &inst->persistbufs.list) {
-		buf = list_entry(ptr, struct vidc_internal_buf, list);
-
+	list_for_each_entry_safe(buf, n, &inst->persistbufs.list, list) {
 		smem = buf->smem;
 		bai.buffer_size = smem->size;
 		bai.buffer_type = buf->type;
@@ -285,7 +291,8 @@ int release_persist_buffers(struct vidc_inst *inst)
 		bai.response_required = true;
 
 		mutex_unlock(&inst->persistbufs.lock);
-		ret = hfi_session_release_buffers(inst, &bai);
+		ret = vidc_hfi_session_release_buffers(hfi, inst->hfi_inst,
+							&bai);
 		mutex_lock(&inst->persistbufs.lock);
 
 		list_del(&buf->list);
@@ -299,47 +306,48 @@ int release_persist_buffers(struct vidc_inst *inst)
 	return ret;
 }
 
-int set_scratch_buffers(struct vidc_inst *inst)
+int scratch_set_buffers(struct vidc_inst *inst)
 {
+	struct device *dev = inst->core->dev;
 	int ret;
 
-	ret = release_scratch_buffers(inst, true);
+	ret = scratch_release_buffers(inst, true);
 	if (ret)
-		dprintk(VIDC_WARN, "Failed to release scratch buffers\n");
+		dev_warn(dev, "Failed to release scratch buffers\n");
 
-	ret = set_scratch_buffer(inst, HAL_BUFFER_INTERNAL_SCRATCH);
-	if (ret)
-		goto error;
-
-	ret = set_scratch_buffer(inst, HAL_BUFFER_INTERNAL_SCRATCH_1);
+	ret = scratch_set_buffer(inst, HAL_BUFFER_INTERNAL_SCRATCH);
 	if (ret)
 		goto error;
 
-	ret = set_scratch_buffer(inst, HAL_BUFFER_INTERNAL_SCRATCH_2);
+	ret = scratch_set_buffer(inst, HAL_BUFFER_INTERNAL_SCRATCH_1);
+	if (ret)
+		goto error;
+
+	ret = scratch_set_buffer(inst, HAL_BUFFER_INTERNAL_SCRATCH_2);
 	if (ret)
 		goto error;
 
 	return 0;
 error:
-	release_scratch_buffers(inst, false);
+	scratch_release_buffers(inst, false);
 	return ret;
 }
 
-int set_persist_buffers(struct vidc_inst *inst)
+int persist_set_buffers(struct vidc_inst *inst)
 {
 	int ret;
 
-	ret = set_persist_buffer(inst, HAL_BUFFER_INTERNAL_PERSIST);
+	ret = persist_set_buffer(inst, HAL_BUFFER_INTERNAL_PERSIST);
 	if (ret)
 		goto error;
 
-	ret = set_persist_buffer(inst, HAL_BUFFER_INTERNAL_PERSIST_1);
+	ret = persist_set_buffer(inst, HAL_BUFFER_INTERNAL_PERSIST_1);
 	if (ret)
 		goto error;
 
 	return 0;
 
 error:
-	release_persist_buffers(inst);
+	persist_release_buffers(inst);
 	return ret;
 }
