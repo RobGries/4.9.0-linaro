@@ -842,19 +842,19 @@
 			      <0x0194f000 0x010>,
 			      <0x01950000 0x008>,
 			      <0x01951000 0x008>;
-	
+
 			reg-names = "qdsp6_base", "rmb_base", "restart_reg_sec",
 					"halt_q6", "halt_modem", "halt_nc";
-	
+
 			interrupts-extended = <&intc 0 24 1>,
 					      <&q6_smp2p_in 0 0>,
 					      <&q6_smp2p_in 1 0>,
 					      <&q6_smp2p_in 2 0>,
 					      <&q6_smp2p_in 3 0>;
 			interrupt-names = "wdog", "fatal", "ready", "handover", "stop-ack";
-	
+
 			clocks = <&gcc GCC_MSS_CFG_AHB_CLK>, <&gcc GCC_MSS_Q6_BIMC_AXI_CLK>, <&gcc GCC_BOOT_ROM_AHB_CLK>;
-			
+
 			clock-names = "iface", "bus", "mem";
 
 			qcom,mx-supply = <&pm8916_l3>;
@@ -866,8 +866,8 @@
 			qcom,is-loadable;
 			qcom,firmware-name = "modem";
 			qcom,pil-self-auth;
-			
-	
+
+
 			/* GPIO inputs from mss */
 			qcom,gpio-err-fatal = <&q6_smp2p_in 0 0>;
 			qcom,gpio-err-ready = <&q6_smp2p_in 1 0>;
@@ -981,20 +981,28 @@
 			qcom,offset-log-len-mask = <44>;
 			qcom,offset-page-indices = <56>;
 		};
+	};
 
-		vidc_rproc: vidc_tzpil@0 {
-			compatible = "qcom,tz-pil";
-			clocks = <&gcc GCC_CRYPTO_CLK>,
-				 <&gcc GCC_CRYPTO_AHB_CLK>,
-				 <&gcc GCC_CRYPTO_AXI_CLK>,
-				 <&gcc CRYPTO_CLK_SRC>;
-			clock-names = "scm_core_clk", "scm_iface_clk",
-				      "scm_bus_clk", "scm_src_clk";
-			qcom,firmware-name = "venus";
-			qcom,pas-id = <9>;
-			memory-region = <&vidc_mem>;
-			status = "disabled";
-		};
+	vidc_rproc: vidc_tzpil@0 {
+		compatible = "qcom,tz-pil";
+		clocks = <&gcc GCC_CRYPTO_CLK>,
+			 <&gcc GCC_CRYPTO_AHB_CLK>,
+			 <&gcc GCC_CRYPTO_AXI_CLK>,
+			 <&gcc CRYPTO_CLK_SRC>;
+		clock-names = "scm_core_clk", "scm_iface_clk",
+			      "scm_bus_clk", "scm_src_clk";
+		qcom,firmware-name = "venus";
+		qcom,pas-id = <9>;
+		memory-region = <&vidc_mem>;
+		status = "disabled";
+	};
+
+	vidc-iommu-bus {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0 0 0 0xffffffff>;
+		dma-ranges = <0x5dc00000 0 0x5dc00000 0x80000000>;
 
 		vidc: qcom,vidc@1d00000 {
 			compatible = "qcom,msm-vidc";
@@ -1009,10 +1017,7 @@
 			qcom,max-hw-load = <352800>; /* 720p @ 30 + 1080p @ 30 */
 			qcom,enable-idle-indicator;
 			rproc = <&vidc_rproc>;
-			qcom,iommu-cb = <&venus_ns>,
-					<&venus_sec_bitstream>,
-					<&venus_sec_pixel>,
-					<&venus_sec_non_pixel>;
+			iommus = <&apps_iommu 5>;
 			status = "disabled";
 		};
 	};
