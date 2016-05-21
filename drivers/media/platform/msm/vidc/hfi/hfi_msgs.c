@@ -307,37 +307,15 @@ static void
 sys_get_prop_image_version(struct device *dev,
 			   struct hfi_msg_sys_property_info_pkt *pkt)
 {
-	int i = 0;
-	char version[256];
-	const u32 version_string_size = 128;
-	u8 *str_image_version;
 	int req_bytes;
 
 	req_bytes = pkt->hdr.size - sizeof(*pkt);
 
-	if (req_bytes < version_string_size || !pkt->data[1] ||
-	    pkt->num_properties > 1) {
+	if (req_bytes < 128 || !pkt->data[1] || pkt->num_properties > 1)
 		/* bad packet */
 		return;
-	}
 
-	str_image_version = (u8 *)&pkt->data[1];
-
-	/*
-	 * The version string returned by firmware includes null
-	 * characters at the start and in between. Replace the null
-	 * characters with space, to print the version info.
-	 */
-	for (i = 0; i < version_string_size; i++) {
-		if (str_image_version[i] != '\0')
-			version[i] = str_image_version[i];
-		else
-			version[i] = ' ';
-	}
-
-	version[i] = '\0';
-
-	dev_dbg(dev, "F/W version: %s\n", version);
+	dev_info(dev, "F/W version: %s\n", (u8 *)&pkt->data[1]);
 }
 
 static void hfi_sys_property_info(struct hfi_device *hfi,
@@ -382,6 +360,20 @@ static void hfi_sys_ping_done(struct hfi_device *hfi,
 		hfi->error = HAL_ERR_FAIL;
 
 	complete(&hfi->done);
+}
+
+static void hfi_sys_idle_done(struct hfi_device *hfi,
+			      struct hfi_device_inst *inst, void *packet)
+{
+	dev_dbg(hfi->dev, "sys idle\n");
+}
+
+static void hfi_sys_pc_prepare_done(struct hfi_device *hfi,
+				    struct hfi_device_inst *inst, void *packet)
+{
+	struct hfi_msg_sys_pc_prep_done_pkt *pkt = packet;
+
+	dev_dbg(hfi->dev, "pc prepare done (error %x)\n", pkt->error_type);
 }
 
 static void hfi_copy_cap_prop(struct hfi_capability *in,
@@ -1174,6 +1166,16 @@ static const struct hfi_done_handler handlers[] = {
 	{.pkt = HFI_MSG_SESSION_RELEASE_BUFFERS_DONE,
 	 .pkt_sz = sizeof(struct hfi_msg_session_release_buffers_done_pkt),
 	 .done = hfi_session_rel_buf_done,
+	},
+	{.pkt = HFI_MSG_SYS_IDLE,
+	 .pkt_sz = sizeof(struct hfi_msg_sys_idle_pkt),
+	 .done = hfi_sys_idle_done,
+	 .is_sys_pkt = true,
+	},
+	{.pkt = HFI_MSG_SYS_PC_PREP_DONE,
+	 .pkt_sz = sizeof(struct hfi_msg_sys_pc_prep_done_pkt),
+	 .done = hfi_sys_pc_prepare_done,
+	 .is_sys_pkt = true,
 	},
 };
 

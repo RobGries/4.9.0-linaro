@@ -20,6 +20,7 @@
 #include <linux/types.h>
 #include <linux/version.h>
 #include <linux/remoteproc.h>
+#include <linux/pm_runtime.h>
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-event.h>
 #include <media/v4l2-ctrls.h>
@@ -32,6 +33,7 @@
 #include "resources.h"
 
 #define VIDC_CORES_MAX		2
+#define VIDC_AUTOSUSPEND_DELAY	200
 
 struct vidc_drv *vidc_driver;
 
@@ -175,6 +177,8 @@ static int vidc_open(struct file *file)
 	struct vidc_inst *inst;
 	int ret = 0;
 
+	dev_info(dev, "%s: enter\n", __func__);
+
 	inst = kzalloc(sizeof(*inst), GFP_KERNEL);
 	if (!inst)
 		return -ENOMEM;
@@ -201,9 +205,9 @@ static int vidc_open(struct file *file)
 		goto err_free_inst;
 	}
 
-	ret = enable_clocks(&core->res);
-	if (ret) {
-		dev_err(dev, "enable clocks\n");
+	ret = pm_runtime_get_sync(dev);
+	if (ret < 0) {
+		dev_err(dev, "pm_runtime_get_sync (%d)\n", ret);
 		goto err_del_mem_clnt;
 	}
 
@@ -240,6 +244,8 @@ static int vidc_open(struct file *file)
 
 	vidc_add_inst(core, inst);
 
+	dev_info(dev, "%s: exit\n", __func__);
+
 	return 0;
 
 err_core_deinit:
@@ -247,11 +253,12 @@ err_core_deinit:
 err_rproc_shutdown:
 	vidc_rproc_shutdown(core);
 err_dis_clks:
-	disable_clocks(&core->res);
+	pm_runtime_put_sync_suspend(dev);
 err_del_mem_clnt:
 	smem_delete_client(inst->mem_client);
 err_free_inst:
 	kfree(inst);
+	dev_info(dev, "%s: exit (ret %d)\n", __func__, ret);
 	return ret;
 }
 
@@ -262,6 +269,8 @@ static int vidc_close(struct file *file)
 	struct device *dev = core->dev;
 	int ret;
 
+	dev_info(dev, "%s: enter\n", __func__);
+
 	if (inst->session_type == VIDC_DECODER)
 		vdec_close(inst);
 	else
@@ -269,11 +278,17 @@ static int vidc_close(struct file *file)
 
 	vidc_del_inst(core, inst);
 
+	ret = pm_runtime_put_sync(dev);
+	if (ret)
+		dev_err(dev, "pm_runtime_put_sync (%d)\n", ret);
+
+#if 0
 	ret = vidc_hfi_core_deinit(&core->hfi);
 	if (ret)
 		dev_err(dev, "core: deinit failed (%d)\n", ret);
 
-	disable_clocks(&core->res);
+	vidc_rproc_shutdown(core);
+#endif
 
 	smem_delete_client(inst->mem_client);
 
@@ -286,6 +301,8 @@ static int vidc_close(struct file *file)
 	v4l2_fh_exit(&inst->fh);
 
 	kfree(inst);
+
+	dev_info(dev, "%s: exit\n", __func__);
 
 	return 0;
 }
@@ -509,6 +526,12 @@ static int vidc_probe(struct platform_device *pdev)
 	list_add_tail(&core->list, &vidc_driver->cores);
 	mutex_unlock(&vidc_driver->lock);
 
+//	pm_runtime_set_autosuspend_delay(dev, VIDC_AUTOSUSPEND_DELAY);
+//	pm_runtime_use_autosuspend(dev);
+//	pm_runtime_mark_last_busy(dev);
+//	pm_runtime_set_active(dev);
+	pm_runtime_enable(dev);
+
 	return 0;
 
 err_hfi_destroy:
@@ -526,10 +549,29 @@ static int vidc_remove(struct platform_device *pdev)
 {
 	struct vidc_core *core;
 	int empty;
+	int ret;
 
 	core = platform_get_drvdata(pdev);
 	if (!core)
 		return -EINVAL;
+
+//	ret = pm_runtime_get_sync(core->dev);
+//	if (ret < 0)
+//		dev_err(core->dev, "pm_runtime_get_sync (%d)\n", ret);
+
+//	ret = vidc_hfi_core_deinit(&core->hfi);
+//	if (ret)
+//		dev_err(core->dev, "core: deinit failed (%d)\n", ret);
+
+//	ret = pm_runtime_put_sync(&pdev->dev);
+//	if (ret)
+//		dev_err(core->dev, "pm_runtime_force_suspend (%d)\n", ret);
+
+	pm_runtime_disable(core->dev);
+
+	ret = vidc_hfi_core_deinit(&core->hfi);
+	if (ret)
+		dev_err(core->dev, "core: deinit failed (%d)\n", ret);
 
 	vidc_hfi_destroy(&core->hfi);
 	vdec_deinit(core, &core->vdev_dec);
@@ -546,7 +588,7 @@ static int vidc_remove(struct platform_device *pdev)
 	vidc_rproc_shutdown(core);
 
 	if (!empty)
-		return 0;
+		return -EBUSY;
 
 	kfree(vidc_driver);
 	vidc_driver = NULL;
@@ -566,11 +608,59 @@ static int vidc_pm_suspend(struct device *dev)
 
 static int vidc_pm_resume(struct device *dev)
 {
+	struct vidc_core *core = dev_get_drvdata(dev);
+
+	return vidc_hfi_core_resume(&core->hfi);
+}
+
+static int vidc_runtime_suspend(struct device *dev)
+{
+	struct vidc_core *core = dev_get_drvdata(dev);
+	int ret = 0;
+
+	dev_info(dev, "%s enter\n", __func__);
+
+	ret = vidc_hfi_core_suspend(&core->hfi);
+	if (ret)
+		dev_warn(dev, "%s: venus suspend failed (%d)", __func__, ret);
+
+	disable_clocks(&core->res);
+
+	dev_info(dev, "%s exit (%d)\n", __func__, ret);
+
+	return ret;
+}
+
+static int vidc_runtime_resume(struct device *dev)
+{
+	struct vidc_core *core = dev_get_drvdata(dev);
+	int ret;
+
+	dev_info(dev, "%s enter\n", __func__);
+
+	ret = enable_clocks(&core->res);
+	if (ret) {
+		dev_err(dev, "%s: cannot enable clocks\n", __func__);
+		return ret;
+	}
+
+	ret = vidc_hfi_core_resume(&core->hfi);
+
+	dev_info(dev, "%s exit (%d)\n", __func__, ret);
+
+	return ret;
+}
+
+static int vidc_runtime_idle(struct device *dev)
+{
+	dev_info(dev, "%s enter\n", __func__);
 	return 0;
 }
 
 static const struct dev_pm_ops vidc_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(vidc_pm_suspend, vidc_pm_resume)
+	SET_RUNTIME_PM_OPS(vidc_runtime_suspend, vidc_runtime_resume,
+			   vidc_runtime_idle)
 };
 
 static struct platform_driver qcom_vidc_driver = {

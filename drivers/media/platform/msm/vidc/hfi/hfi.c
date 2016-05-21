@@ -99,7 +99,7 @@ unlock:
 
 int vidc_hfi_core_deinit(struct hfi_device *hfi)
 {
-//	struct device *dev = hfi->dev;
+	struct device *dev = hfi->dev;
 	int ret = 0;
 
 	mutex_lock(&hfi->lock);
@@ -116,11 +116,11 @@ int vidc_hfi_core_deinit(struct hfi_device *hfi)
 	 * will have a burst of back to back video playback sessions
 	 * e.g. thumbnail generation.
 	 */
-//	ret = call_hfi_op(hfi, core_deinit, hfi);
-//	if (ret)
-//		dev_err(dev, "core deinit failed: %d\n", ret);
+	ret = call_hfi_op(hfi, core_deinit, hfi);
+	if (ret)
+		dev_err(dev, "core deinit failed: %d\n", ret);
 
-//	hfi->state = CORE_UNINIT;
+	hfi->state = CORE_UNINIT;
 
 unlock:
 	mutex_unlock(&hfi->lock);
@@ -130,6 +130,11 @@ unlock:
 int vidc_hfi_core_suspend(struct hfi_device *hfi)
 {
 	return call_hfi_op(hfi, suspend, hfi);
+}
+
+int vidc_hfi_core_resume(struct hfi_device *hfi)
+{
+	return call_hfi_op(hfi, resume, hfi);
 }
 
 int vidc_hfi_core_trigger_ssr(struct hfi_device *hfi,

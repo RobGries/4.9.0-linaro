@@ -11,6 +11,7 @@
  *
  */
 
+#include <linux/kernel.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/iopoll.h>
@@ -120,6 +121,7 @@ struct venus_hfi_device {
 	u32 intr_status;
 	u32 last_packet_type;
 	bool power_enabled;
+	bool suspended;
 	struct mutex lock;
 	struct mem_desc ifaceq_table;
 	struct mem_desc sfr;
@@ -490,13 +492,21 @@ static int venus_reset_core(struct venus_hfi_device *hdev)
 	u32 ctrl_status = 0, count = 0;
 	int max_tries = 100, ret = 0;
 
+	dev_info(dev, "%s: enter\n", __func__);
+
 	venus_writel(hdev, VIDC_CTRL_INIT, 0x1);
+
+	dev_info(dev, "%s: VIDC_CTRL_INIT end\n", __func__);
 
 	venus_writel(hdev, VIDC_WRAPPER_INTR_MASK,
 		     VIDC_WRAPPER_INTR_MASK_A2HVCODEC_BMSK);
+	dev_info(dev, "%s: VIDC_WRAPPER_INTR_MASK end\n", __func__);
+
 	venus_writel(hdev, VIDC_CPU_CS_SCIACMDARG3, 1);
+	dev_info(dev, "%s: VIDC_CPU_CS_SCIACMDARG3 end\n", __func__);
 
 	while (!ctrl_status && count < max_tries) {
+		dev_info(dev, "%s: reading VIDC_CPU_CS_SCIACMDARG0\n", __func__);
 		ctrl_status = venus_readl(hdev, VIDC_CPU_CS_SCIACMDARG0);
 		if ((ctrl_status & 0xfe) == 0x4) {
 			dev_err(dev, "invalid setting for UC_REGION\n");
@@ -536,11 +546,15 @@ static int venus_run(struct venus_hfi_device *hdev)
 	struct device *dev = hdev->dev;
 	int ret;
 
+	dev_info(dev, "%s: enter\n", __func__);
+
 	/*
 	 * Re-program all of the registers that get reset as a result of
 	 * regulator_disable() and _enable()
 	 */
 	venus_set_registers(hdev);
+
+	dev_info(dev, "%s: after set_registers\n", __func__);
 
 	venus_writel(hdev, VIDC_UC_REGION_ADDR, hdev->ifaceq_table.da);
 	venus_writel(hdev, VIDC_UC_REGION_SIZE, SHARED_QSIZE);
@@ -551,6 +565,8 @@ static int venus_run(struct venus_hfi_device *hdev)
 
 	venus_writel(hdev, VIDC_WRAPPER_CLOCK_CONFIG, 0);
 	venus_writel(hdev, VIDC_WRAPPER_CPU_CLOCK_CONFIG, 0);
+
+	dev_info(dev, "%s: start reset core\n", __func__);
 
 	ret = venus_reset_core(hdev);
 	if (ret) {
@@ -632,7 +648,7 @@ static int venus_power_on(struct venus_hfi_device *hdev)
 	if (hdev->power_enabled)
 		return 0;
 
-	dev_dbg(dev, "resuming from power collapse\n");
+	dev_info(dev, "resuming from power collapse\n");
 
 	/* Reboot the firmware */
 	ret = venus_tzbsp_set_video_state(TZBSP_VIDEO_STATE_RESUME);
@@ -651,7 +667,7 @@ static int venus_power_on(struct venus_hfi_device *hdev)
 	 */
 	hdev->power_enabled = true;
 
-	dev_dbg(dev, "resumed from power collapse\n");
+	dev_info(dev, "resumed from power collapse\n");
 
 	return 0;
 
@@ -907,11 +923,7 @@ static int venus_sys_set_power_control(struct venus_hfi_device *hdev,
 {
 	struct hfi_sys_set_property_pkt *pkt;
 	u8 packet[VIDC_IFACEQ_VAR_SMALL_PKT_SIZE];
-	bool supported = false;
 	int ret;
-
-	if (!supported)
-		return 0;
 
 	pkt = (struct hfi_sys_set_property_pkt *) packet;
 
@@ -936,10 +948,10 @@ static int venus_get_queue_size(struct venus_hfi_device *hdev,
 	if (!qhdr)
 		return -EINVAL;
 
-	return qhdr->read_idx - qhdr->write_idx;
+	return abs(qhdr->read_idx - qhdr->write_idx);
 }
 
-static void venus_sys_set_default_properties(struct venus_hfi_device *hdev)
+static int venus_sys_set_default_properties(struct venus_hfi_device *hdev)
 {
 	struct device *dev = hdev->dev;
 	int ret;
@@ -957,6 +969,8 @@ static void venus_sys_set_default_properties(struct venus_hfi_device *hdev)
 	if (ret)
 		dev_warn(dev, "setting hw power collapse ON failed (%d)\n",
 			 ret);
+
+	return ret;
 }
 
 static int venus_session_cmd(struct hfi_device_inst *inst, u32 pkt_type)
@@ -997,6 +1011,24 @@ static int venus_prepare_power_collapse(struct venus_hfi_device *hdev)
 	return 0;
 }
 
+static int venus_are_queues_empty(struct venus_hfi_device *hdev)
+{
+	int ret1, ret2;
+
+	ret1 = venus_get_queue_size(hdev, IFACEQ_MSG_IDX);
+	if (ret1 < 0)
+		return ret1;
+
+	ret2 = venus_get_queue_size(hdev, IFACEQ_CMD_IDX);
+	if (ret2 < 0)
+		return ret2;
+
+	if (!ret1 && !ret2)
+		return 1;
+
+	return 0;
+}
+
 static void venus_pm_handler(struct work_struct *work)
 {
 	struct venus_hfi_device *hdev;
@@ -1005,7 +1037,6 @@ static void venus_pm_handler(struct work_struct *work)
 	int ret;
 
 	hdev = container_of(work, struct venus_hfi_device, pm_work.work);
-
 	dev = hdev->dev;
 
 	if (!hdev->power_enabled) {
@@ -1026,8 +1057,7 @@ static void venus_pm_handler(struct work_struct *work)
 
 	ret = venus_prepare_power_collapse(hdev);
 	if (ret) {
-		dev_err(dev, "failed to prepare for power collapse (%d)\n",
-			ret);
+		dev_err(dev, "prepare for power collapse fail (%d)\n", ret);
 		return;
 	}
 
@@ -1039,8 +1069,8 @@ static void venus_pm_handler(struct work_struct *work)
 		goto skip_power_off;
 	}
 
-	if (venus_get_queue_size(hdev, IFACEQ_MSG_IDX) ||
-	    venus_get_queue_size(hdev, IFACEQ_CMD_IDX)) {
+	ret = venus_are_queues_empty(hdev);
+	if (ret < 0 || !ret) {
 		dev_dbg(dev, "cmd/msg queues are not empty\n");
 		goto skip_power_off;
 	}
@@ -1164,11 +1194,11 @@ static irqreturn_t venus_isr_thread(int irq, struct hfi_device *hfi)
 
 	if (!hdev)
 		return IRQ_NONE;
-
+#if 0
 	ret = venus_hfi_resume(hfi);
 	if (ret)
 		return IRQ_NONE;
-
+#endif
 	if (hdev->res->sw_power_collapsible) {
 		cancel_delayed_work(&hdev->pm_work);
 		if (!queue_delayed_work(hdev->pm_workq, &hdev->pm_work,
@@ -1253,7 +1283,6 @@ static int venus_hfi_core_init(struct hfi_device *hfi)
 	int ret;
 
 	hdev->intr_status = 0;
-	hdev->power_enabled = true;
 
 	if (hdev->mem_client) {
 		dev_err(dev, "memory client exists\n");
@@ -1276,8 +1305,6 @@ static int venus_hfi_core_init(struct hfi_device *hfi)
 		goto err_release_queues;
 	}
 
-	venus_set_state(hdev, VENUS_STATE_INIT);
-
 	call_hfi_pkt_op(hdev, sys_init, &pkt, HFI_VIDEO_ARCH_OX);
 
 	ret = venus_iface_cmdq_write(hdev, &pkt);
@@ -1293,6 +1320,8 @@ static int venus_hfi_core_init(struct hfi_device *hfi)
 	ret = venus_protect_cp_mem(hdev);
 	if (ret)
 		goto err_state_deinit;
+
+	venus_set_state(hdev, VENUS_STATE_INIT);
 
 	return 0;
 
@@ -1310,30 +1339,14 @@ err_delete_client:
 static int venus_hfi_core_deinit(struct hfi_device *hfi)
 {
 	struct venus_hfi_device *hdev = to_hfi_priv(hfi);
-	int ret;
 
-	if (hdev->mem_client) {
-		ret = venus_hfi_resume(hfi);
-		if (ret)
-			return ret;
-
-		hdev->intr_status = 0;
-	}
+	dev_info(hdev->dev, "%s: enter\n", __func__);
 
 	venus_set_state(hdev, VENUS_STATE_DEINIT);
 
-	cancel_delayed_work(&hdev->pm_work);
-	flush_workqueue(hdev->pm_workq);
-
 	venus_interface_queues_release(hdev);
 
-	/*
-	 * Halt the AXI to make sure there are no pending transactions.
-	 * Clocks should be unprepared after making sure axi is halted.
-	 */
-	venus_halt_axi(hdev);
-
-	hdev->power_enabled = false;
+	dev_info(hdev->dev, "%s: exit\n", __func__);
 
 	return 0;
 }
@@ -1369,7 +1382,9 @@ int venus_hfi_session_init(struct hfi_device *hfi, struct hfi_device_inst *inst,
 
 	inst->device = hdev;
 
-	venus_sys_set_default_properties(hdev);
+	ret = venus_sys_set_default_properties(hdev);
+	if (ret)
+		return ret;
 
 	ret = call_hfi_pkt_op(hdev, session_init, &pkt, inst, type, codec);
 	if (ret)
@@ -1619,12 +1634,27 @@ static int venus_hfi_get_core_capabilities(void)
 static int venus_hfi_resume(struct hfi_device *hfi)
 {
 	struct venus_hfi_device *hdev = to_hfi_priv(hfi);
-	int ret;
+	int ret = 0;
 
 	mutex_lock(&hdev->lock);
-	ret = venus_power_on(hdev);
-	mutex_unlock(&hdev->lock);
 
+	dev_info(hdev->dev, "%s: enter (power:%d, suspended:%d)\n", __func__,
+		 hdev->power_enabled, hdev->suspended);
+
+	if (hdev->suspended == false)
+		goto unlock;
+
+	ret = venus_power_on(hdev);
+
+unlock:
+
+	if (!ret)
+		hdev->suspended = false;
+
+	dev_info(hdev->dev, "%s: enter (power:%d, suspended:%d)\n", __func__,
+		hdev->power_enabled, hdev->suspended);
+
+	mutex_unlock(&hdev->lock);
 	return ret;
 }
 
@@ -1632,13 +1662,74 @@ static int venus_hfi_suspend(struct hfi_device *hfi)
 {
 	struct venus_hfi_device *hdev = to_hfi_priv(hfi);
 	struct device *dev = hfi->dev;
+	u32 ctrl_status, wfi_status, idle_status, pc_ready;
 	int ret;
 
-	if (!hdev->power_enabled)
+	dev_info(dev, "%s: enter (power:%d, suspended:%d)\n", __func__,
+		hdev->power_enabled, hdev->suspended);
+
+	if (!hdev->power_enabled || hdev->suspended)
 		return 0;
 
-	ret = flush_delayed_work(&hdev->pm_work);
-	dev_dbg(dev, "%s: flush delayed work %d\n", __func__, ret);
+	mutex_lock(&hdev->lock);
+	ret = venus_is_valid_state(hdev);
+	mutex_unlock(&hdev->lock);
+
+	if (!ret) {
+		dev_warn(dev, "core is in bad state, skipping power collapse\n");
+		return -EINVAL;
+	}
+
+	dev_info(dev, "%s: preparing for power collapse\n", __func__);
+
+	ret = venus_prepare_power_collapse(hdev);
+	if (ret) {
+		dev_err(dev, "prepare for power collapse fail (%d)\n", ret);
+		return ret;
+	}
+
+	mutex_lock(&hdev->lock);
+
+	if (hdev->last_packet_type != HFI_CMD_SYS_PC_PREP) {
+		mutex_unlock(&hdev->lock);
+		dev_dbg(dev, "last command (%x) is not PC_PREP cmd\n",
+			hdev->last_packet_type);
+		return -EINVAL;
+	}
+
+	ret = venus_are_queues_empty(hdev);
+	if (ret < 0 || !ret) {
+		mutex_unlock(&hdev->lock);
+		dev_dbg(dev, "cmd/msg queues are not empty\n");
+		return -EINVAL;
+	}
+
+	ctrl_status = venus_readl(hdev, VIDC_CPU_CS_SCIACMDARG0);
+	if (!(ctrl_status & VIDC_CPU_CS_SCIACMDARG0_HFI_CTRL_PC_READY)) {
+		mutex_unlock(&hdev->lock);
+		dev_warn(dev, "Venus is not ready for power collapse (%x)\n",
+			 ctrl_status);
+		return -EINVAL;
+	}
+
+//	wfi_status = venus_readl(hdev, VIDC_WRAPPER_CPU_STATUS);
+//	idle_status = venus_readl(hdev, VIDC_CPU_CS_SCIACMDARG0);
+
+//	dev_info(dev, "venus: wfi %x, idle %x\n", wfi_status, idle_status);
+
+	ret = venus_power_off(hdev);
+	if (ret) {
+		mutex_unlock(&hdev->lock);
+		dev_err(dev, "failed to power off Venus\n");
+		return ret;
+	}
+
+	hdev->suspended = true;
+
+	dev_info(dev, "%s: enter (power:%d, suspended:%d)\n", __func__,
+		hdev->power_enabled, hdev->suspended);
+
+	mutex_unlock(&hdev->lock);
 
 	return 0;
 }

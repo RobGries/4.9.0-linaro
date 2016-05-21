@@ -1433,6 +1433,7 @@ void vidc_hfi_destroy(struct hfi_device *hfi);
 int vidc_hfi_core_init(struct hfi_device *hfi);
 int vidc_hfi_core_deinit(struct hfi_device *hfi);
 int vidc_hfi_core_suspend(struct hfi_device *hfi);
+int vidc_hfi_core_resume(struct hfi_device *hfi);
 int vidc_hfi_core_trigger_ssr(struct hfi_device *hfi,
 			      enum hal_ssr_trigger_type type);
 int vidc_hfi_core_ping(struct hfi_device *hfi);
