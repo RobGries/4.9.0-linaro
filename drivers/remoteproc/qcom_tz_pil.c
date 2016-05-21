@@ -280,7 +280,8 @@ static int qproc_load(struct rproc *rproc, const struct firmware *fw)
 				qproc->pas_id, fw->data, fw->size);
 	if (ret) {
 		dev_err(qproc->dev, "Invalid firmware metadata\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto clk_disable;
 	}
 
 	diff_addr = max_addr - min_addr;
@@ -290,12 +291,15 @@ static int qproc_load(struct rproc *rproc, const struct firmware *fw)
 		relocatable ? qproc->reloc_phys : min_addr, max_addr - min_addr);
 	if (ret) {
 		dev_err(qproc->dev, "unable to setup memory for image\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto clk_disable;
 	}
 
 	fw_name = kzalloc(strlen(qproc->name) + 5, GFP_KERNEL);
-	if (!fw_name)
-		return -ENOMEM;
+	if (!fw_name) {
+		ret = -ENOMEM;
+		goto clk_disable;
+	}
 
 	for (i = 0; i < ehdr->e_phnum; i++) {
 		phdr = &mdt->phdr[i];
@@ -314,9 +318,10 @@ static int qproc_load(struct rproc *rproc, const struct firmware *fw)
 
 	kfree(fw_name);
 
+clk_disable:
 	qproc_scm_clk_disable(qproc);
 
-	return 0;
+	return ret;
 }
 
 const struct rproc_fw_ops qproc_fw_ops = {
@@ -349,26 +354,22 @@ static int qproc_start(struct rproc *rproc)
 
 	/* if ready irq not provided skip waiting */
 	if (qproc->ready_irq < 0)
-		goto done;
+		goto unroll_clocks;
 
 	ret = wait_for_completion_timeout(&qproc->start_done, msecs_to_jiffies(10000));
 	if (ret == 0) {
-		dev_err(qproc->dev, "start timed out\n");
-
+		ret = -ETIMEDOUT;
 		qcom_scm_pas_shutdown(qproc->pas_id);
-		goto unroll_clocks;
+		dev_err(qproc->dev, "start timed out\n");
 	}
-
-done:
-	dev_info(qproc->dev, "start successful\n");
-
-	return 0;
 
 unroll_clocks:
 	qproc_scm_clk_disable(qproc);
-
 disable_regulator:
 	regulator_disable(qproc->pll);
+
+	if (!ret)
+		dev_dbg(qproc->dev, "start successful\n");
 
 	return ret;
 }
@@ -396,7 +397,7 @@ static irqreturn_t qproc_fatal_interrupt(int irq, void *dev)
 	struct qproc *qproc = dev;
 	size_t len;
 	char *msg;
-	int ret;
+	int ret = 0;
 
 	msg = qcom_smem_get(-1, qproc->crash_reason, &len);
 	if (IS_ERR(msg) && len > 0 && msg[0])
@@ -421,10 +422,6 @@ static irqreturn_t qproc_ready_interrupt(int irq, void *dev)
 
 static irqreturn_t qproc_handover_interrupt(int irq, void *dev)
 {
-	struct qproc *qproc = dev;
-
-	qproc_scm_clk_disable(qproc);
-	regulator_disable(qproc->pll);
 	return IRQ_HANDLED;
 }
 
