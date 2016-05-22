@@ -1342,30 +1342,6 @@ static int venc_start_streaming(struct vb2_queue *q, unsigned int count)
 	return 0;
 }
 
-static void venc_buf_queue(struct vb2_buffer *vb)
-{
-	struct vidc_inst *inst = vb2_get_drv_priv(vb->vb2_queue);
-	struct device *dev = inst->core->dev;
-	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
-	struct vidc_buffer *buf = to_vidc_buffer(vbuf);
-	int ret;
-
-	dev_dbg(dev, "%s: vb:%p, type:%d, addr:%pa\n", __func__, vb,
-		vb->vb2_queue->type, &buf->dma_addr);
-
-	mutex_lock(&inst->bufqueue_lock);
-	list_add_tail(&buf->list, &inst->bufqueue);
-	mutex_unlock(&inst->bufqueue_lock);
-
-	if (!vb2_is_streaming(&inst->bufq_cap) ||
-	    !vb2_is_streaming(&inst->bufq_out))
-		return;
-
-	ret = vidc_set_session_buf(vb);
-	if (ret)
-		vb2_buffer_done(vb, VB2_BUF_STATE_ERROR);
-}
-
 static void venc_stop_streaming(struct vb2_queue *q)
 {
 	struct vidc_inst *inst = vb2_get_drv_priv(q);
@@ -1386,7 +1362,7 @@ static const struct vb2_ops venc_vb2_ops = {
 	.buf_prepare = venc_buf_prepare,
 	.start_streaming = venc_start_streaming,
 	.stop_streaming = venc_stop_streaming,
-	.buf_queue = venc_buf_queue,
+	.buf_queue = vidc_vb2_buf_queue,
 };
 
 static int venc_empty_buf_done(struct hfi_device_inst *hfi_inst, u32 addr,

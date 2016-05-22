@@ -245,6 +245,43 @@ vidc_get_vb2buffer(struct vidc_inst *inst, dma_addr_t addr)
 	return vb;
 }
 
+void vidc_vb2_buf_queue(struct vb2_buffer *vb)
+{
+	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
+	struct vidc_inst *inst = vb2_get_drv_priv(vb->vb2_queue);
+	struct vidc_core *core = inst->core;
+	struct device *dev = core->dev;
+	struct vidc_buffer *buf = to_vidc_buffer(vbuf);
+	unsigned int state;
+	int ret;
+
+	mutex_lock(&inst->hfi_inst->lock);
+	state = inst->hfi_inst->state;
+	mutex_unlock(&inst->hfi_inst->lock);
+
+	if (state == INST_INVALID || state >= INST_STOP) {
+		vb2_buffer_done(vb, VB2_BUF_STATE_ERROR);
+		dev_dbg(dev, "%s: type:%d, invalid instance state\n", __func__,
+			vb->type);
+		return;
+	}
+
+	dev_dbg(dev, "%s: vb:%p, type:%d, addr:%pa\n", __func__, vb,
+		vb->vb2_queue->type, &buf->dma_addr);
+
+	mutex_lock(&inst->bufqueue_lock);
+	list_add_tail(&buf->list, &inst->bufqueue);
+	mutex_unlock(&inst->bufqueue_lock);
+
+	if (!vb2_is_streaming(&inst->bufq_cap) ||
+	    !vb2_is_streaming(&inst->bufq_out))
+		return;
+
+	ret = vidc_set_session_buf(vb);
+	if (ret)
+		vb2_buffer_done(vb, VB2_BUF_STATE_ERROR);
+}
+
 int vidc_stop_streaming(struct vidc_inst *inst)
 {
 	struct hfi_device_inst *hfi_inst = inst->hfi_inst;
