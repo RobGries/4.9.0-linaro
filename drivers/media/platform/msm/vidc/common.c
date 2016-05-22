@@ -341,8 +341,9 @@ void vidc_vb2_buf_queue(struct vb2_buffer *vb)
 		vb2_buffer_done(vb, VB2_BUF_STATE_ERROR);
 }
 
-int vidc_stop_streaming(struct vidc_inst *inst)
+void vidc_vb2_stop_streaming(struct vb2_queue *q)
 {
+	struct vidc_inst *inst = vb2_get_drv_priv(q);
 	struct hfi_device_inst *hfi_inst = inst->hfi_inst;
 	struct vidc_core *core = inst->core;
 	struct device *dev = core->dev;
@@ -354,7 +355,7 @@ int vidc_stop_streaming(struct vidc_inst *inst)
 	mutex_unlock(&inst->lock);
 
 	if (streamoff)
-		return 0;
+		return;
 
 	ret = vidc_hfi_session_stop(hfi, inst->hfi_inst);
 	if (ret) {
@@ -403,7 +404,9 @@ abort:
 	inst->streamoff = 1;
 	mutex_unlock(&inst->lock);
 
-	return ret;
+	if (ret)
+		dev_err(dev, "stop streaming failed type: %d, ret: %d\n",
+			q->type, ret);
 }
 
 int vidc_start_streaming(struct vidc_inst *inst)

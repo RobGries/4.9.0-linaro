@@ -1284,26 +1284,12 @@ static int venc_start_streaming(struct vb2_queue *q, unsigned int count)
 	return 0;
 }
 
-static void venc_stop_streaming(struct vb2_queue *q)
-{
-	struct vidc_inst *inst = vb2_get_drv_priv(q);
-	struct device *dev = inst->core->dev;
-	int ret;
-
-	dev_dbg(dev, "%s: type: %d\n", __func__, q->type);
-
-	ret = vidc_stop_streaming(inst);
-	if (ret)
-		dev_err(dev, "stop streaming failed type: %d, ret: %d\n",
-			q->type, ret);
-}
-
 static const struct vb2_ops venc_vb2_ops = {
 	.queue_setup = venc_queue_setup,
 	.buf_init = vidc_vb2_buf_init,
 	.buf_prepare = vidc_vb2_buf_prepare,
 	.start_streaming = venc_start_streaming,
-	.stop_streaming = venc_stop_streaming,
+	.stop_streaming = vidc_vb2_stop_streaming,
 	.buf_queue = vidc_vb2_buf_queue,
 };
 
