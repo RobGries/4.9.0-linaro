@@ -472,10 +472,6 @@ static int vidc_probe(struct platform_device *pdev)
 	list_add_tail(&core->list, &vidc_driver->cores);
 	mutex_unlock(&vidc_driver->lock);
 
-//	pm_runtime_set_autosuspend_delay(dev, VIDC_AUTOSUSPEND_DELAY);
-//	pm_runtime_use_autosuspend(dev);
-//	pm_runtime_mark_last_busy(dev);
-//	pm_runtime_set_active(dev);
 	pm_runtime_enable(dev);
 
 	return 0;
