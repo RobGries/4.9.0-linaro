@@ -1162,40 +1162,13 @@ static int venc_queue_setup(struct vb2_queue *q, const void *parg,
 {
 	struct vidc_inst *inst = vb2_get_drv_priv(q);
 	struct device *dev = inst->core->dev;
-	struct hal_buffer_requirements *buff_req;
+	struct hal_buffer_requirements bufreq;
 	unsigned int p;
 	int ret = 0;
 
 	dev_dbg(dev, "%s: type:%u\n", __func__, q->type);
 
 	switch (q->type) {
-	case V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE:
-		*num_planes = inst->fmt_cap->num_planes;
-
-		ret = venc_init_session(inst);
-		if (ret)
-			return ret;
-
-		ret = vidc_get_bufreqs(inst);
-		if (ret) {
-			dev_err(dev, "buffer requirements (%d)\n", ret);
-			return ret;
-		}
-
-		buff_req = vidc_get_buff_req_buffer(inst, HAL_BUFFER_OUTPUT);
-		if (!buff_req) {
-			ret = -EINVAL;
-			break;
-		}
-
-		*num_buffers = max(*num_buffers, buff_req->count_actual);
-		*num_buffers = clamp_val(*num_buffers, 4, VIDEO_MAX_FRAME);
-		inst->num_output_bufs = *num_buffers;
-
-		sizes[0] = get_framesize_compressed(0, inst->height,
-						    inst->width);
-		alloc_ctxs[0] = inst->vb2_ctx_cap;
-		break;
 	case V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE:
 		*num_planes = inst->fmt_out->num_planes;
 		*num_buffers = clamp_val(*num_buffers, 5, VIDEO_MAX_FRAME);
@@ -1206,6 +1179,25 @@ static int venc_queue_setup(struct vb2_queue *q, const void *parg,
 						      inst->width);
 			alloc_ctxs[p] = inst->vb2_ctx_out;
 		}
+		break;
+	case V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE:
+		*num_planes = inst->fmt_cap->num_planes;
+
+		ret = venc_init_session(inst);
+		if (ret)
+			return ret;
+
+		ret = vidc_bufrequirements(inst, HAL_BUFFER_OUTPUT, &bufreq);
+		if (ret)
+			return ret;
+
+		*num_buffers = max(*num_buffers, bufreq.count_actual);
+		*num_buffers = clamp_val(*num_buffers, 4, VIDEO_MAX_FRAME);
+		inst->num_output_bufs = *num_buffers;
+
+		sizes[0] = get_framesize_compressed(0, inst->height,
+						    inst->width);
+		alloc_ctxs[0] = inst->vb2_ctx_cap;
 		break;
 	default:
 		ret = -EINVAL;
