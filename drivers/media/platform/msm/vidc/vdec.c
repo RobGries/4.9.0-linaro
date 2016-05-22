@@ -813,11 +813,8 @@ static int vdec_queue_setup(struct vb2_queue *q, const void *parg,
 			    void *alloc_ctxs[])
 {
 	struct vidc_inst *inst = vb2_get_drv_priv(q);
-	struct hfi_device *hfi = &inst->core->hfi;
 	struct device *dev = inst->core->dev;
 	struct hal_buffer_requirements bufreq;
-	struct hal_buffer_count_actual buf_count;
-	enum hal_property ptype;
 	unsigned int p;
 	u32 mbs;
 	int ret = 0;
@@ -836,19 +833,7 @@ static int vdec_queue_setup(struct vb2_queue *q, const void *parg,
 			sizes[p] = get_framesize_compressed(mbs);
 			alloc_ctxs[p] = inst->vb2_ctx_out;
 		}
-#if 0
-		ptype = HAL_PARAM_BUFFER_COUNT_ACTUAL;
-		buf_count.type = HAL_BUFFER_INPUT;
-		buf_count.count_actual = *num_buffers;
 
-		ret = vidc_hfi_session_set_property(hfi, inst->hfi_inst,
-						    ptype, &buf_count);
-		if (ret) {
-			dev_err(dev, "set buffer count %d failed (%d)\n",
-				buf_count.count_actual, ret);
-			return ret;
-		}
-#endif
 		inst->num_input_bufs = *num_buffers;
 		inst->fmts_settled |= VIDC_FMT_OUT;
 
@@ -861,53 +846,13 @@ static int vdec_queue_setup(struct vb2_queue *q, const void *parg,
 		ret = vdec_init_session(inst);
 		if (ret)
 			return ret;
-#if 0
-		ptype = HAL_PARAM_BUFFER_COUNT_ACTUAL;
-		buf_count.type = HAL_BUFFER_INPUT;
-		buf_count.count_actual = inst->num_input_bufs;
 
-		ret = vidc_hfi_session_set_property(hfi, inst->hfi_inst,
-						    ptype, &buf_count);
-		if (ret) {
-			dev_err(dev, "set buffer count %d failed (%d)\n",
-				buf_count.count_actual, ret);
-			return ret;
-		}
-#endif
 		ret = vidc_bufrequirements(inst, HAL_BUFFER_OUTPUT, &bufreq);
 		if (ret)
 			return ret;
 
 		*num_buffers = max(*num_buffers, bufreq.count_min);
-#if 0
-		if (*num_buffers != bufreq.count_actual) {
-			struct hal_buffer_display_hold_count_actual display;
 
-			ptype = HAL_PARAM_BUFFER_COUNT_ACTUAL;
-			buf_count.type = HAL_BUFFER_OUTPUT;
-			buf_count.count_actual = *num_buffers;
-
-			ret = vidc_hfi_session_set_property(hfi, inst->hfi_inst,
-							    ptype, &buf_count);
-			if (ret) {
-				dev_err(dev, "set buf count failed (%d)", ret);
-				break;
-			}
-
-			ptype = HAL_PARAM_BUFFER_DISPLAY_HOLD_COUNT_ACTUAL;
-			display.buffer_type = HAL_BUFFER_OUTPUT;
-			display.hold_count =
-					*num_buffers - bufreq.count_actual;
-
-			ret = vidc_hfi_session_set_property(hfi, inst->hfi_inst,
-							    ptype, &display);
-			if (ret) {
-				dev_err(dev, "display hold count failed (%d)",
-					ret);
-				break;
-			}
-		}
-#endif
 		for (p = 0; p < *num_planes; p++) {
 			sizes[p] = get_framesize_nv12(p, inst->height,
 							inst->width);
@@ -916,11 +861,6 @@ static int vdec_queue_setup(struct vb2_queue *q, const void *parg,
 
 		inst->num_output_bufs = *num_buffers;
 		inst->fmts_settled |= VIDC_FMT_CAP;
-
-//		dev_dbg(dev, "call session deinit\n");
-//		ret = vidc_hfi_session_deinit(hfi, inst->hfi_inst);
-//		if (ret)
-//			dev_err(dev, "session deinit failed (%d)\n", ret);
 
 		dev_dbg(dev, "%s: type:%d, num_bufs:%u, size:%u\n", __func__,
 			q->type, *num_buffers, sizes[0]);
