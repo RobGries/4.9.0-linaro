@@ -555,18 +555,6 @@ static int vidc_remove(struct platform_device *pdev)
 	if (!core)
 		return -EINVAL;
 
-//	ret = pm_runtime_get_sync(core->dev);
-//	if (ret < 0)
-//		dev_err(core->dev, "pm_runtime_get_sync (%d)\n", ret);
-
-//	ret = vidc_hfi_core_deinit(&core->hfi);
-//	if (ret)
-//		dev_err(core->dev, "core: deinit failed (%d)\n", ret);
-
-//	ret = pm_runtime_put_sync(&pdev->dev);
-//	if (ret)
-//		dev_err(core->dev, "pm_runtime_force_suspend (%d)\n", ret);
-
 	pm_runtime_disable(core->dev);
 
 	ret = vidc_hfi_core_deinit(&core->hfi);

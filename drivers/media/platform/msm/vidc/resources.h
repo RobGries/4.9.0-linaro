@@ -67,7 +67,6 @@ struct vidc_resources {
 	struct reg_set reg_set;
 	u32 max_load;
 	struct clock_set clock_set;
-	bool sw_power_collapsible;
 	bool sys_idle_indicator;
 	const char *hfi_version;
 };

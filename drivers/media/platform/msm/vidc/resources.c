@@ -173,9 +173,6 @@ int get_platform_resources(struct vidc_core *core)
 		return ret;
 	}
 
-	propname = "qcom,sw-power-collapse";
-	res->sw_power_collapsible = of_property_read_bool(np, propname);
-
 	return 0;
 }
 
