@@ -127,8 +127,6 @@ struct venus_hfi_device {
 	struct mem_desc sfr;
 	struct iface_queue queues[IFACEQ_NUM];
 	struct smem_client *mem_client;
-	struct workqueue_struct *pm_workq;
-	struct delayed_work pm_work;
 	struct vidc_resources *res;
 	struct device *dev;
 	enum venus_state state;
@@ -416,16 +414,6 @@ static int venus_iface_cmdq_write_nolock(struct venus_hfi_device *hdev,
 	if (rx_req)
 		venus_soft_int(hdev);
 
-	if (hdev->res->sw_power_collapsible) {
-		dev_dbg(dev, "cancel and queue delayed work again\n");
-
-		cancel_delayed_work(&hdev->pm_work);
-
-		if (!queue_delayed_work(hdev->pm_workq, &hdev->pm_work,
-					msecs_to_jiffies(2000)))
-			dev_dbg(dev, "PM work already scheduled\n");
-	}
-
 	return 0;
 }
 
@@ -492,21 +480,12 @@ static int venus_reset_core(struct venus_hfi_device *hdev)
 	u32 ctrl_status = 0, count = 0;
 	int max_tries = 100, ret = 0;
 
-	dev_info(dev, "%s: enter\n", __func__);
-
 	venus_writel(hdev, VIDC_CTRL_INIT, 0x1);
-
-	dev_info(dev, "%s: VIDC_CTRL_INIT end\n", __func__);
-
 	venus_writel(hdev, VIDC_WRAPPER_INTR_MASK,
 		     VIDC_WRAPPER_INTR_MASK_A2HVCODEC_BMSK);
-	dev_info(dev, "%s: VIDC_WRAPPER_INTR_MASK end\n", __func__);
-
 	venus_writel(hdev, VIDC_CPU_CS_SCIACMDARG3, 1);
-	dev_info(dev, "%s: VIDC_CPU_CS_SCIACMDARG3 end\n", __func__);
 
 	while (!ctrl_status && count < max_tries) {
-		dev_info(dev, "%s: reading VIDC_CPU_CS_SCIACMDARG0\n", __func__);
 		ctrl_status = venus_readl(hdev, VIDC_CPU_CS_SCIACMDARG0);
 		if ((ctrl_status & 0xfe) == 0x4) {
 			dev_err(dev, "invalid setting for UC_REGION\n");
@@ -546,15 +525,11 @@ static int venus_run(struct venus_hfi_device *hdev)
 	struct device *dev = hdev->dev;
 	int ret;
 
-	dev_info(dev, "%s: enter\n", __func__);
-
 	/*
 	 * Re-program all of the registers that get reset as a result of
 	 * regulator_disable() and _enable()
 	 */
 	venus_set_registers(hdev);
-
-	dev_info(dev, "%s: after set_registers\n", __func__);
 
 	venus_writel(hdev, VIDC_UC_REGION_ADDR, hdev->ifaceq_table.da);
 	venus_writel(hdev, VIDC_UC_REGION_SIZE, SHARED_QSIZE);
@@ -565,8 +540,6 @@ static int venus_run(struct venus_hfi_device *hdev)
 
 	venus_writel(hdev, VIDC_WRAPPER_CLOCK_CONFIG, 0);
 	venus_writel(hdev, VIDC_WRAPPER_CPU_CLOCK_CONFIG, 0);
-
-	dev_info(dev, "%s: start reset core\n", __func__);
 
 	ret = venus_reset_core(hdev);
 	if (ret) {
@@ -1029,90 +1002,6 @@ static int venus_are_queues_empty(struct venus_hfi_device *hdev)
 	return 0;
 }
 
-static void venus_pm_handler(struct work_struct *work)
-{
-	struct venus_hfi_device *hdev;
-	struct device *dev;
-	u32 ctrl_status = 0;
-	int ret;
-
-	hdev = container_of(work, struct venus_hfi_device, pm_work.work);
-	dev = hdev->dev;
-
-	if (!hdev->power_enabled) {
-		dev_dbg(dev, "%s: power already disabled\n", __func__);
-		return;
-	}
-
-	mutex_lock(&hdev->lock);
-	ret = venus_is_valid_state(hdev);
-	mutex_unlock(&hdev->lock);
-
-	if (!ret) {
-		dev_warn(dev, "core is in bad state, skipping power collapse\n");
-		return;
-	}
-
-	dev_dbg(dev, "prepare for power collapse\n");
-
-	ret = venus_prepare_power_collapse(hdev);
-	if (ret) {
-		dev_err(dev, "prepare for power collapse fail (%d)\n", ret);
-		return;
-	}
-
-	mutex_lock(&hdev->lock);
-
-	if (hdev->last_packet_type != HFI_CMD_SYS_PC_PREP) {
-		dev_dbg(dev, "last command (%x) is not PC_PREP cmd\n",
-			hdev->last_packet_type);
-		goto skip_power_off;
-	}
-
-	ret = venus_are_queues_empty(hdev);
-	if (ret < 0 || !ret) {
-		dev_dbg(dev, "cmd/msg queues are not empty\n");
-		goto skip_power_off;
-	}
-
-	ctrl_status = venus_readl(hdev, VIDC_CPU_CS_SCIACMDARG0);
-	if (!(ctrl_status & VIDC_CPU_CS_SCIACMDARG0_HFI_CTRL_PC_READY)) {
-		dev_dbg(dev, "Venus is not ready for power collapse (%x)\n",
-			ctrl_status);
-		goto skip_power_off;
-	}
-
-	ret = venus_power_off(hdev);
-	if (ret) {
-		dev_err(dev, "failed to power off Venus\n");
-		goto err_power_off;
-	}
-
-	/* Cancel pending delayed works if any */
-	cancel_delayed_work(&hdev->pm_work);
-
-	mutex_unlock(&hdev->lock);
-
-	return;
-
-err_power_off:
-skip_power_off:
-
-	/*
-	* When power collapse is escaped, driver no need to inform Venus.
-	* Venus is self-sufficient to come out of the power collapse at
-	* any stage. Driver can skip power collapse and continue with
-	* normal execution.
-	*/
-
-	/* Cancel pending delayed works if any */
-	cancel_delayed_work(&hdev->pm_work);
-	dev_warn(dev, "power off skipped (last pkt %x, status: %x)\n",
-		 hdev->last_packet_type, ctrl_status);
-
-	mutex_unlock(&hdev->lock);
-}
-
 static void venus_sfr_print(struct venus_hfi_device *hdev)
 {
 	struct device *dev = hdev->dev;
@@ -1187,24 +1076,11 @@ static void venus_flush_debug_queue(struct venus_hfi_device *hdev, void *packet)
 static irqreturn_t venus_isr_thread(int irq, struct hfi_device *hfi)
 {
 	struct venus_hfi_device *hdev = to_hfi_priv(hfi);
-	struct device *dev = hfi->dev;
 	void *pkt = hdev->pkt_buf;
 	u32 msg_ret;
-	int ret;
 
 	if (!hdev)
 		return IRQ_NONE;
-#if 0
-	ret = venus_hfi_resume(hfi);
-	if (ret)
-		return IRQ_NONE;
-#endif
-	if (hdev->res->sw_power_collapsible) {
-		cancel_delayed_work(&hdev->pm_work);
-		if (!queue_delayed_work(hdev->pm_workq, &hdev->pm_work,
-					msecs_to_jiffies(2000)))
-			dev_dbg(dev, "PM work already scheduled\n");
-	}
 
 	if (hdev->intr_status & VIDC_WRAPPER_INTR_STATUS_A2HWD_BMSK) {
 		disable_irq_nosync(hdev->irq);
@@ -1662,7 +1538,7 @@ static int venus_hfi_suspend(struct hfi_device *hfi)
 {
 	struct venus_hfi_device *hdev = to_hfi_priv(hfi);
 	struct device *dev = hfi->dev;
-	u32 ctrl_status, wfi_status, idle_status, pc_ready;
+	u32 ctrl_status;
 	int ret;
 
 	dev_info(dev, "%s: enter (power:%d, suspended:%d)\n", __func__,
@@ -1711,11 +1587,6 @@ static int venus_hfi_suspend(struct hfi_device *hfi)
 			 ctrl_status);
 		return -EINVAL;
 	}
-
-//	wfi_status = venus_readl(hdev, VIDC_WRAPPER_CPU_STATUS);
-//	idle_status = venus_readl(hdev, VIDC_CPU_CS_SCIACMDARG0);
-
-//	dev_info(dev, "venus: wfi %x, idle %x\n", wfi_status, idle_status);
 
 	ret = venus_power_off(hdev);
 	if (ret) {
@@ -1783,7 +1654,6 @@ void venus_hfi_destroy(struct hfi_device *hfi)
 {
 	struct venus_hfi_device *hdev = to_hfi_priv(hfi);
 
-	destroy_workqueue(hdev->pm_workq);
 	mutex_destroy(&hdev->lock);
 	kfree(hdev);
 }
@@ -1796,6 +1666,8 @@ int venus_hfi_create(struct hfi_device *hfi, struct vidc_resources *res)
 	if (!hdev)
 		return -ENOMEM;
 
+	mutex_init(&hdev->lock);
+
 	hdev->res = res;
 	hdev->pkt_ops = hfi->pkt_ops;
 	hdev->packetization_type = HFI_PACKETIZATION_LEGACY;
@@ -1803,14 +1675,6 @@ int venus_hfi_create(struct hfi_device *hfi, struct vidc_resources *res)
 	hdev->base = res->base;
 	hdev->dev = hfi->dev;
 
-	hdev->pm_workq = create_singlethread_workqueue("pm_workerq_venus");
-	if (!hdev->pm_workq) {
-		kfree(hdev);
-		return -ENOMEM;
-	}
-
-	INIT_DELAYED_WORK(&hdev->pm_work, venus_pm_handler);
-	mutex_init(&hdev->lock);
 	hfi->priv = hdev;
 	hfi->ops = &venus_hfi_ops;
 
