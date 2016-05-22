@@ -32,6 +32,7 @@ struct vidc_buffer {
 
 struct vb2_v4l2_buffer *
 vidc_get_vb2buffer(struct vidc_inst *inst, dma_addr_t addr);
+int vidc_vb2_buf_prepare(struct vb2_buffer *vb);
 void vidc_vb2_buf_queue(struct vb2_buffer *vb);
 int vidc_stop_streaming(struct vidc_inst *inst);
 int vidc_start_streaming(struct vidc_inst *inst);

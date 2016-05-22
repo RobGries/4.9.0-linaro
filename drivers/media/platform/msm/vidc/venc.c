@@ -1258,21 +1258,6 @@ static int venc_buf_init(struct vb2_buffer *vb)
 	return 0;
 }
 
-static int venc_buf_prepare(struct vb2_buffer *vb)
-{
-	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
-	struct vidc_buffer *buf = to_vidc_buffer(vbuf);
-	struct sg_table *sgt;
-
-	sgt = vb2_dma_sg_plane_desc(vb, 0);
-	if (!sgt)
-		return -EINVAL;
-
-	buf->dma_addr = sg_dma_address(sgt->sgl);
-
-	return 0;
-}
-
 static int start_streaming(struct vidc_inst *inst)
 {
 	struct device *dev = inst->core->dev;
@@ -1359,7 +1344,7 @@ static void venc_stop_streaming(struct vb2_queue *q)
 static const struct vb2_ops venc_vb2_ops = {
 	.queue_setup = venc_queue_setup,
 	.buf_init = venc_buf_init,
-	.buf_prepare = venc_buf_prepare,
+	.buf_prepare = vidc_vb2_buf_prepare,
 	.start_streaming = venc_start_streaming,
 	.stop_streaming = venc_stop_streaming,
 	.buf_queue = vidc_vb2_buf_queue,

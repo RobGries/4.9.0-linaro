@@ -16,6 +16,7 @@
 #include <linux/mutex.h>
 #include <linux/completion.h>
 #include <media/msm-v4l2-controls.h>
+#include <media/videobuf2-dma-sg.h>
 
 #include "smem.h"
 #include "common.h"
@@ -243,6 +244,21 @@ vidc_get_vb2buffer(struct vidc_inst *inst, dma_addr_t addr)
 	mutex_unlock(&inst->bufqueue_lock);
 
 	return vb;
+}
+
+int vidc_vb2_buf_prepare(struct vb2_buffer *vb)
+{
+	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
+	struct vidc_buffer *buf = to_vidc_buffer(vbuf);
+	struct sg_table *sgt;
+
+	sgt = vb2_dma_sg_plane_desc(vb, 0);
+	if (!sgt)
+		return -EINVAL;
+
+	buf->dma_addr = sg_dma_address(sgt->sgl);
+
+	return 0;
 }
 
 void vidc_vb2_buf_queue(struct vb2_buffer *vb)
