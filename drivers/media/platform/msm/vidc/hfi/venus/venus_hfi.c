@@ -515,7 +515,7 @@ static u32 venus_hwversion(struct venus_hfi_device *hdev)
 	minor = minor >> VIDC_WRAPPER_HW_VERSION_MINOR_VERSION_SHIFT;
 	step = ver & VIDC_WRAPPER_HW_VERSION_STEP_VERSION_MASK;
 
-	dev_info(dev, "venus hw version %d.%d.%d\n", major, minor, step);
+	dev_dbg(dev, "venus hw version %d.%d.%d\n", major, minor, step);
 
 	return major;
 }
@@ -621,7 +621,7 @@ static int venus_power_on(struct venus_hfi_device *hdev)
 	if (hdev->power_enabled)
 		return 0;
 
-	dev_info(dev, "resuming from power collapse\n");
+	dev_dbg(dev, "resuming from power collapse\n");
 
 	/* Reboot the firmware */
 	ret = venus_tzbsp_set_video_state(TZBSP_VIDEO_STATE_RESUME);
@@ -640,7 +640,7 @@ static int venus_power_on(struct venus_hfi_device *hdev)
 	 */
 	hdev->power_enabled = true;
 
-	dev_info(dev, "resumed from power collapse\n");
+	dev_dbg(dev, "resumed from power collapse\n");
 
 	return 0;
 
@@ -1160,32 +1160,11 @@ static int venus_hfi_core_init(struct hfi_device *hfi)
 
 	hdev->intr_status = 0;
 
-	if (hdev->mem_client) {
-		dev_err(dev, "memory client exists\n");
-		return -EINVAL;
-	}
-
-	hdev->mem_client = smem_new_client(hfi->dev);
-	if (IS_ERR(hdev->mem_client))
-		return PTR_ERR(hdev->mem_client);
-
-	ret = venus_interface_queues_init(hdev);
-	if (ret) {
-		dev_err(dev, "failed to init queues (%d)\n", ret);
-		goto err_delete_client;
-	}
-
-	ret = venus_run(hdev);
-	if (ret) {
-		dev_err(dev, "run venus core failed (%d)\n", ret);
-		goto err_release_queues;
-	}
-
 	call_hfi_pkt_op(hdev, sys_init, &pkt, HFI_VIDEO_ARCH_OX);
 
 	ret = venus_iface_cmdq_write(hdev, &pkt);
 	if (ret)
-		goto err_state_deinit;
+		return ret;
 
 	call_hfi_pkt_op(hdev, sys_image_version, &version_pkt);
 
@@ -1195,34 +1174,22 @@ static int venus_hfi_core_init(struct hfi_device *hfi)
 
 	ret = venus_protect_cp_mem(hdev);
 	if (ret)
-		goto err_state_deinit;
+		return ret;
 
 	venus_set_state(hdev, VENUS_STATE_INIT);
 
 	return 0;
-
-err_state_deinit:
-	venus_set_state(hdev, VENUS_STATE_DEINIT);
-err_release_queues:
-	venus_free(hdev, hdev->ifaceq_table.smem);
-	venus_free(hdev, hdev->sfr.smem);
-err_delete_client:
-	smem_delete_client(hdev->mem_client);
-	hdev->mem_client = NULL;
-	return ret;
 }
 
 static int venus_hfi_core_deinit(struct hfi_device *hfi)
 {
 	struct venus_hfi_device *hdev = to_hfi_priv(hfi);
 
-	dev_info(hdev->dev, "%s: enter\n", __func__);
+	dev_dbg(hdev->dev, "%s: enter\n", __func__);
 
 	venus_set_state(hdev, VENUS_STATE_DEINIT);
 
-	venus_interface_queues_release(hdev);
-
-	dev_info(hdev->dev, "%s: exit\n", __func__);
+	dev_dbg(hdev->dev, "%s: exit\n", __func__);
 
 	return 0;
 }
@@ -1514,7 +1481,7 @@ static int venus_hfi_resume(struct hfi_device *hfi)
 
 	mutex_lock(&hdev->lock);
 
-	dev_info(hdev->dev, "%s: enter (power:%d, suspended:%d)\n", __func__,
+	dev_dbg(hdev->dev, "%s: enter (power:%d, suspended:%d)\n", __func__,
 		 hdev->power_enabled, hdev->suspended);
 
 	if (hdev->suspended == false)
@@ -1527,7 +1494,7 @@ unlock:
 	if (!ret)
 		hdev->suspended = false;
 
-	dev_info(hdev->dev, "%s: enter (power:%d, suspended:%d)\n", __func__,
+	dev_dbg(hdev->dev, "%s: enter (power:%d, suspended:%d)\n", __func__,
 		hdev->power_enabled, hdev->suspended);
 
 	mutex_unlock(&hdev->lock);
@@ -1541,7 +1508,7 @@ static int venus_hfi_suspend(struct hfi_device *hfi)
 	u32 ctrl_status;
 	int ret;
 
-	dev_info(dev, "%s: enter (power:%d, suspended:%d)\n", __func__,
+	dev_dbg(dev, "%s: enter (power:%d, suspended:%d)\n", __func__,
 		hdev->power_enabled, hdev->suspended);
 
 	if (!hdev->power_enabled || hdev->suspended)
@@ -1556,7 +1523,7 @@ static int venus_hfi_suspend(struct hfi_device *hfi)
 		return -EINVAL;
 	}
 
-	dev_info(dev, "%s: preparing for power collapse\n", __func__);
+	dev_dbg(dev, "%s: preparing for power collapse\n", __func__);
 
 	ret = venus_prepare_power_collapse(hdev);
 	if (ret) {
@@ -1597,7 +1564,7 @@ static int venus_hfi_suspend(struct hfi_device *hfi)
 
 	hdev->suspended = true;
 
-	dev_info(dev, "%s: enter (power:%d, suspended:%d)\n", __func__,
+	dev_dbg(dev, "%s: enter (power:%d, suspended:%d)\n", __func__,
 		hdev->power_enabled, hdev->suspended);
 
 	mutex_unlock(&hdev->lock);
@@ -1654,6 +1621,7 @@ void venus_hfi_destroy(struct hfi_device *hfi)
 {
 	struct venus_hfi_device *hdev = to_hfi_priv(hfi);
 
+	venus_interface_queues_release(hdev);
 	mutex_destroy(&hdev->lock);
 	kfree(hdev);
 }
@@ -1661,6 +1629,7 @@ void venus_hfi_destroy(struct hfi_device *hfi)
 int venus_hfi_create(struct hfi_device *hfi, struct vidc_resources *res)
 {
 	struct venus_hfi_device *hdev;
+	int ret;
 
 	hdev = kzalloc(sizeof(*hdev), GFP_KERNEL);
 	if (!hdev)
@@ -1678,5 +1647,25 @@ int venus_hfi_create(struct hfi_device *hfi, struct vidc_resources *res)
 	hfi->priv = hdev;
 	hfi->ops = &venus_hfi_ops;
 
+	hdev->mem_client = smem_new_client(hfi->dev);
+	if (IS_ERR(hdev->mem_client)) {
+		ret = PTR_ERR(hdev->mem_client);
+		goto err_kfree;
+	}
+
+	ret = venus_interface_queues_init(hdev);
+	if (ret) {
+		dev_err(hfi->dev, "failed to init queues (%d)\n", ret);
+		goto err_delete_client;
+	}
+
 	return 0;
+
+err_delete_client:
+	smem_delete_client(hdev->mem_client);
+err_kfree:
+	kfree(hdev);
+	hfi->priv = NULL;
+	hfi->ops = NULL;
+	return ret;
 }

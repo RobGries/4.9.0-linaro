@@ -177,7 +177,7 @@ static int vidc_open(struct file *file)
 	struct vidc_inst *inst;
 	int ret = 0;
 
-	dev_info(dev, "%s: enter\n", __func__);
+	dev_dbg(dev, "%s: enter\n", __func__);
 
 	inst = kzalloc(sizeof(*inst), GFP_KERNEL);
 	if (!inst)
@@ -244,7 +244,7 @@ static int vidc_open(struct file *file)
 
 	vidc_add_inst(core, inst);
 
-	dev_info(dev, "%s: exit\n", __func__);
+	dev_dbg(dev, "%s: exit\n", __func__);
 
 	return 0;
 
@@ -258,7 +258,7 @@ err_del_mem_clnt:
 	smem_delete_client(inst->mem_client);
 err_free_inst:
 	kfree(inst);
-	dev_info(dev, "%s: exit (ret %d)\n", __func__, ret);
+	dev_dbg(dev, "%s: exit (ret %d)\n", __func__, ret);
 	return ret;
 }
 
@@ -269,7 +269,7 @@ static int vidc_close(struct file *file)
 	struct device *dev = core->dev;
 	int ret;
 
-	dev_info(dev, "%s: enter\n", __func__);
+	dev_dbg(dev, "%s: enter\n", __func__);
 
 	if (inst->session_type == VIDC_DECODER)
 		vdec_close(inst);
@@ -302,7 +302,7 @@ static int vidc_close(struct file *file)
 
 	kfree(inst);
 
-	dev_info(dev, "%s: exit\n", __func__);
+	dev_dbg(dev, "%s: exit\n", __func__);
 
 	return 0;
 }
@@ -616,17 +616,13 @@ static int vidc_pm_resume(struct device *dev)
 static int vidc_runtime_suspend(struct device *dev)
 {
 	struct vidc_core *core = dev_get_drvdata(dev);
-	int ret = 0;
-
-	dev_info(dev, "%s enter\n", __func__);
+	int ret;
 
 	ret = vidc_hfi_core_suspend(&core->hfi);
 	if (ret)
-		dev_warn(dev, "%s: venus suspend failed (%d)", __func__, ret);
+		dev_err(dev, "%s: venus suspend failed (%d)", __func__, ret);
 
 	disable_clocks(&core->res);
-
-	dev_info(dev, "%s exit (%d)\n", __func__, ret);
 
 	return ret;
 }
@@ -636,8 +632,6 @@ static int vidc_runtime_resume(struct device *dev)
 	struct vidc_core *core = dev_get_drvdata(dev);
 	int ret;
 
-	dev_info(dev, "%s enter\n", __func__);
-
 	ret = enable_clocks(&core->res);
 	if (ret) {
 		dev_err(dev, "%s: cannot enable clocks\n", __func__);
@@ -646,14 +640,14 @@ static int vidc_runtime_resume(struct device *dev)
 
 	ret = vidc_hfi_core_resume(&core->hfi);
 
-	dev_info(dev, "%s exit (%d)\n", __func__, ret);
+	if (ret)
+		dev_err(dev, "%s exit (%d)\n", __func__, ret);
 
 	return ret;
 }
 
 static int vidc_runtime_idle(struct device *dev)
 {
-	dev_info(dev, "%s enter\n", __func__);
 	return 0;
 }
 

@@ -315,7 +315,7 @@ sys_get_prop_image_version(struct device *dev,
 		/* bad packet */
 		return;
 
-	dev_info(dev, "F/W version: %s\n", (u8 *)&pkt->data[1]);
+	dev_dbg(dev, "F/W version: %s\n", (u8 *)&pkt->data[1]);
 }
 
 static void hfi_sys_property_info(struct hfi_device *hfi,
