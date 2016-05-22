@@ -17,24 +17,19 @@
 
 #include "internal.h"
 
-static u32 get_mbs_per_sec(struct vidc_inst *inst)
+static u32 get_inst_load(struct vidc_inst *inst)
 {
 	int mbs;
 	u32 w = inst->width;
 	u32 h = inst->height;
 
-	mbs = (ALIGN(w, 16) / 16) * (ALIGN(h, 16) / 16);
-
-	return mbs * inst->fps;
-}
-
-static u32 get_inst_load(struct vidc_inst *inst)
-{
 	if (!inst->hfi_inst || !(inst->hfi_inst->state >= INST_OPEN &&
 				 inst->hfi_inst->state < INST_STOP))
 		return 0;
 
-	return get_mbs_per_sec(inst);
+	mbs = (ALIGN(w, 16) / 16) * (ALIGN(h, 16) / 16);
+
+	return mbs * inst->fps;
 }
 
 static u32 get_load(struct vidc_core *core, enum session_type type)
