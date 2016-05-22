@@ -221,6 +221,29 @@ int vidc_bufrequirements(struct vidc_inst *inst, enum hal_buffer_type type,
 	return ret;
 }
 
+struct vb2_v4l2_buffer *
+vidc_get_vb2buffer(struct vidc_inst *inst, dma_addr_t addr)
+{
+	struct vidc_buffer *buf;
+	struct vb2_v4l2_buffer *vb = NULL;
+
+	mutex_lock(&inst->bufqueue_lock);
+
+	list_for_each_entry(buf, &inst->bufqueue, list) {
+		if (buf->dma_addr == addr) {
+			vb = &buf->vb;
+			break;
+		}
+	}
+
+	if (vb)
+		list_del(&buf->list);
+
+	mutex_unlock(&inst->bufqueue_lock);
+
+	return vb;
+}
+
 int vidc_session_flush(struct vidc_inst *inst, u32 flags)
 {
 	struct vidc_core *core = inst->core;

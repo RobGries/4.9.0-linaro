@@ -1260,29 +1260,6 @@ static const struct vb2_ops vdec_vb2_ops = {
 	.buf_queue = vdec_buf_queue,
 };
 
-static struct vb2_v4l2_buffer *
-vdec_get_vb2buffer(struct vidc_inst *inst, dma_addr_t addr)
-{
-	struct vidc_buffer *buf;
-	struct vb2_v4l2_buffer *vb = NULL;
-
-	mutex_lock(&inst->bufqueue_lock);
-
-	list_for_each_entry(buf, &inst->bufqueue, list) {
-		if (buf->dma_addr == addr) {
-			vb = &buf->vb;
-			break;
-		}
-	}
-
-	if (vb)
-		list_del(&buf->list);
-
-	mutex_unlock(&inst->bufqueue_lock);
-
-	return vb;
-}
-
 static int vdec_empty_buf_done(struct hfi_device_inst *hfi_inst, u32 addr,
 			       u32 bytesused, u32 data_offset, u32 flags)
 {
@@ -1291,7 +1268,7 @@ static int vdec_empty_buf_done(struct hfi_device_inst *hfi_inst, u32 addr,
 	struct vb2_v4l2_buffer *vbuf;
 	struct vb2_buffer *vb;
 
-	vbuf = vdec_get_vb2buffer(inst, addr);
+	vbuf = vidc_get_vb2buffer(inst, addr);
 	if (!vbuf)
 		return -EINVAL;
 
@@ -1324,7 +1301,7 @@ static int vdec_fill_buf_done(struct hfi_device_inst *hfi_inst, u32 addr,
 	struct vb2_v4l2_buffer *vbuf;
 	struct vb2_buffer *vb;
 
-	vbuf = vdec_get_vb2buffer(inst, addr);
+	vbuf = vidc_get_vb2buffer(inst, addr);
 	if (!vbuf)
 		return -EINVAL;
 
