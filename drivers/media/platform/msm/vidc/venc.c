@@ -1215,49 +1215,6 @@ static int venc_queue_setup(struct vb2_queue *q, const void *parg,
 	return ret;
 }
 
-static int venc_buf_init(struct vb2_buffer *vb)
-{
-	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
-	struct vb2_queue *q = vb->vb2_queue;
-	struct vidc_inst *inst = vb2_get_drv_priv(q);
-	struct hfi_device *hfi = &inst->core->hfi;
-	struct device *dev = inst->core->dev;
-	struct vidc_buffer *buf = to_vidc_buffer(vbuf);
-	struct hal_buffer_addr_info *bai;
-	struct buffer_info *bi;
-	struct sg_table *sgt;
-	int ret;
-
-	bi = &buf->bi;
-	bai = &bi->bai;
-
-	memset(bai, 0, sizeof(*bai));
-
-	if (q->type != V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
-		return 0;
-
-	sgt = vb2_dma_sg_plane_desc(vb, 0);
-	if (!sgt)
-		return -EINVAL;
-
-	bai->buffer_size = vb2_plane_size(vb, 0);
-	bai->buffer_type = HAL_BUFFER_OUTPUT;
-	bai->num_buffers = 1;
-	bai->device_addr = sg_dma_address(sgt->sgl);
-
-	ret = vidc_hfi_session_set_buffers(hfi, inst->hfi_inst, bai);
-	if (ret) {
-		dev_err(dev, "%s: session: set buffer failed\n", __func__);
-		return ret;
-	}
-
-	mutex_lock(&inst->registeredbufs.lock);
-	list_add_tail(&bi->list, &inst->registeredbufs.list);
-	mutex_unlock(&inst->registeredbufs.lock);
-
-	return 0;
-}
-
 static int start_streaming(struct vidc_inst *inst)
 {
 	struct device *dev = inst->core->dev;
@@ -1343,7 +1300,7 @@ static void venc_stop_streaming(struct vb2_queue *q)
 
 static const struct vb2_ops venc_vb2_ops = {
 	.queue_setup = venc_queue_setup,
-	.buf_init = venc_buf_init,
+	.buf_init = vidc_vb2_buf_init,
 	.buf_prepare = vidc_vb2_buf_prepare,
 	.start_streaming = venc_start_streaming,
 	.stop_streaming = venc_stop_streaming,
