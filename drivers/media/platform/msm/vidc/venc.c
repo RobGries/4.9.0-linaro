@@ -1215,15 +1215,29 @@ static int venc_queue_setup(struct vb2_queue *q, const void *parg,
 	return ret;
 }
 
-static int start_streaming(struct vidc_inst *inst)
+static int venc_start_streaming(struct vb2_queue *q, unsigned int count)
 {
-	struct device *dev = inst->core->dev;
+	struct vidc_inst *inst = vb2_get_drv_priv(q);
 	struct hfi_device *hfi = &inst->core->hfi;
+	struct device *dev = inst->core->dev;
 	struct hal_buffer_count_actual buf_count;
 	enum hal_property ptype = HAL_PARAM_BUFFER_COUNT_ACTUAL;
+	struct vb2_queue *queue;
 	int ret;
 
-	dev_dbg(dev, "%s: enter\n", __func__);
+	switch (q->type) {
+	case V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE:
+		queue = &inst->bufq_cap;
+		break;
+	case V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE:
+		queue = &inst->bufq_out;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	if (!vb2_is_streaming(queue))
+		return 0;
 
 	inst->sequence = 0;
 
@@ -1258,28 +1272,6 @@ static int start_streaming(struct vidc_inst *inst)
 		dev_err(dev, "start streaming fail (%d)\n", ret);
 		return ret;
 	}
-
-	return 0;
-}
-
-static int venc_start_streaming(struct vb2_queue *q, unsigned int count)
-{
-	struct vidc_inst *inst = vb2_get_drv_priv(q);
-	struct vb2_queue *queue;
-
-	switch (q->type) {
-	case V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE:
-		queue = &inst->bufq_cap;
-		break;
-	case V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE:
-		queue = &inst->bufq_out;
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	if (vb2_is_streaming(queue))
-		return start_streaming(inst);
 
 	return 0;
 }

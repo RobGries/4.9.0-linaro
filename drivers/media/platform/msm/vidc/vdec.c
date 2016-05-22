@@ -935,87 +935,16 @@ static int vdec_queue_setup(struct vb2_queue *q, const void *parg,
 	return ret;
 }
 
-static int start_streaming(struct vidc_inst *inst)
-{
-	struct device *dev = inst->core->dev;
-	struct hfi_device *hfi = &inst->core->hfi;
-	int ret;
-
-	inst->in_reconfig = false;
-	inst->sequence = 0;
-
-	ret = vdec_init_session(inst);
-	if (ret)
-		return ret;
-
-	ret = vdec_set_properties(inst);
-	if (ret)
-		return ret;
-
-	if (1) {
-		struct hal_buffer_requirements bufreq;
-		struct hal_buffer_count_actual buf_count;
-		enum hal_property ptype;
-
-		ptype = HAL_PARAM_BUFFER_COUNT_ACTUAL;
-		buf_count.type = HAL_BUFFER_INPUT;
-		buf_count.count_actual = inst->num_input_bufs;
-
-		ret = vidc_hfi_session_set_property(hfi, inst->hfi_inst,
-						    ptype, &buf_count);
-		if (ret) {
-			dev_err(dev, "set buffer count %d failed (%d)\n",
-				buf_count.count_actual, ret);
-			return ret;
-		}
-
-		ret = vidc_bufrequirements(inst, HAL_BUFFER_OUTPUT, &bufreq);
-		if (ret)
-			return ret;
-
-		ptype = HAL_PARAM_BUFFER_COUNT_ACTUAL;
-		buf_count.type = HAL_BUFFER_OUTPUT;
-		buf_count.count_actual = inst->num_output_bufs;
-
-		ret = vidc_hfi_session_set_property(hfi, inst->hfi_inst,
-						    ptype, &buf_count);
-		if (ret) {
-			dev_err(dev, "set buf count failed (%d)", ret);
-			return ret;
-		}
-
-		if (inst->num_output_bufs != bufreq.count_actual) {
-			struct hal_buffer_display_hold_count_actual display;
-
-			ptype = HAL_PARAM_BUFFER_DISPLAY_HOLD_COUNT_ACTUAL;
-			display.buffer_type = HAL_BUFFER_OUTPUT;
-			display.hold_count = inst->num_output_bufs -
-					     bufreq.count_actual;
-
-			ret = vidc_hfi_session_set_property(hfi, inst->hfi_inst,
-							    ptype, &display);
-			if (ret) {
-				dev_err(dev, "display hold count failed (%d)",
-					ret);
-				return ret;
-			}
-		}
-	}
-
-	ret = vidc_start_streaming(inst);
-	if (ret) {
-		dev_err(dev, "start streaming fail (%d)\n", ret);
-		return ret;
-	}
-
-	return 0;
-}
-
 static int vdec_start_streaming(struct vb2_queue *q, unsigned int count)
 {
 	struct vidc_inst *inst = vb2_get_drv_priv(q);
+	struct hfi_device *hfi = &inst->core->hfi;
 	struct device *dev = inst->core->dev;
+	struct hal_buffer_requirements bufreq;
+	struct hal_buffer_count_actual buf_count;
+	enum hal_property ptype;
 	struct vb2_queue *queue;
+	int ret;
 
 	dev_dbg(dev, "%s: type: %d, count: %d\n", __func__, q->type, count);
 
@@ -1030,8 +959,69 @@ static int vdec_start_streaming(struct vb2_queue *q, unsigned int count)
 		return -EINVAL;
 	}
 
-	if (vb2_is_streaming(queue))
-		return start_streaming(inst);
+	if (!vb2_is_streaming(queue))
+		return 0;
+
+	inst->in_reconfig = false;
+	inst->sequence = 0;
+
+	ret = vdec_init_session(inst);
+	if (ret)
+		return ret;
+
+	ret = vdec_set_properties(inst);
+	if (ret)
+		return ret;
+
+	ptype = HAL_PARAM_BUFFER_COUNT_ACTUAL;
+	buf_count.type = HAL_BUFFER_INPUT;
+	buf_count.count_actual = inst->num_input_bufs;
+
+	ret = vidc_hfi_session_set_property(hfi, inst->hfi_inst,
+					    ptype, &buf_count);
+	if (ret) {
+		dev_err(dev, "set buffer count %d failed (%d)\n",
+			buf_count.count_actual, ret);
+		return ret;
+	}
+
+	ret = vidc_bufrequirements(inst, HAL_BUFFER_OUTPUT, &bufreq);
+	if (ret)
+		return ret;
+
+	ptype = HAL_PARAM_BUFFER_COUNT_ACTUAL;
+	buf_count.type = HAL_BUFFER_OUTPUT;
+	buf_count.count_actual = inst->num_output_bufs;
+
+	ret = vidc_hfi_session_set_property(hfi, inst->hfi_inst,
+					    ptype, &buf_count);
+	if (ret) {
+		dev_err(dev, "set buf count failed (%d)", ret);
+		return ret;
+	}
+
+	if (inst->num_output_bufs != bufreq.count_actual) {
+		struct hal_buffer_display_hold_count_actual display;
+
+		ptype = HAL_PARAM_BUFFER_DISPLAY_HOLD_COUNT_ACTUAL;
+		display.buffer_type = HAL_BUFFER_OUTPUT;
+		display.hold_count = inst->num_output_bufs -
+				     bufreq.count_actual;
+
+		ret = vidc_hfi_session_set_property(hfi, inst->hfi_inst,
+						    ptype, &display);
+		if (ret) {
+			dev_err(dev, "display hold count failed (%d)",
+				ret);
+			return ret;
+		}
+	}
+
+	ret = vidc_start_streaming(inst);
+	if (ret) {
+		dev_err(dev, "start streaming fail (%d)\n", ret);
+		return ret;
+	}
 
 	return 0;
 }
