@@ -35,7 +35,7 @@
 #define VIDC_CORES_MAX		2
 #define VIDC_AUTOSUSPEND_DELAY	200
 
-struct vidc_drv *vidc_driver;
+static struct vidc_drv *vidc_driver;
 
 static void vidc_add_inst(struct vidc_core *core, struct vidc_inst *inst)
 {
@@ -282,14 +282,6 @@ static int vidc_close(struct file *file)
 	if (ret)
 		dev_err(dev, "pm_runtime_put_sync (%d)\n", ret);
 
-#if 0
-	ret = vidc_hfi_core_deinit(&core->hfi);
-	if (ret)
-		dev_err(dev, "core: deinit failed (%d)\n", ret);
-
-	vidc_rproc_shutdown(core);
-#endif
-
 	smem_delete_client(inst->mem_client);
 
 	mutex_destroy(&inst->bufqueue_lock);
@@ -306,53 +298,7 @@ static int vidc_close(struct file *file)
 
 	return 0;
 }
-#if 0
-static int vidc_get_poll_flags(struct vidc_inst *inst)
-{
-	struct vb2_queue *outq = &inst->bufq_out;
-	struct vb2_queue *capq = &inst->bufq_cap;
-	struct vb2_buffer *out_vb = NULL;
-	struct vb2_buffer *cap_vb = NULL;
-	unsigned long flags;
-	int ret = 0;
 
-	if (v4l2_event_pending(&inst->fh))
-		ret |= POLLPRI;
-
-	spin_lock_irqsave(&capq->done_lock, flags);
-	if (!list_empty(&capq->done_list))
-		cap_vb = list_first_entry(&capq->done_list, struct vb2_buffer,
-					  done_entry);
-	if (cap_vb && (cap_vb->state == VB2_BUF_STATE_DONE ||
-		       cap_vb->state == VB2_BUF_STATE_ERROR))
-		ret |= POLLIN | POLLRDNORM;
-	spin_unlock_irqrestore(&capq->done_lock, flags);
-
-	spin_lock_irqsave(&outq->done_lock, flags);
-	if (!list_empty(&outq->done_list))
-		out_vb = list_first_entry(&outq->done_list, struct vb2_buffer,
-					  done_entry);
-	if (out_vb && (out_vb->state == VB2_BUF_STATE_DONE ||
-		       out_vb->state == VB2_BUF_STATE_ERROR))
-		ret |= POLLOUT | POLLWRNORM;
-	spin_unlock_irqrestore(&outq->done_lock, flags);
-
-	return ret;
-}
-
-static unsigned int vidc_poll(struct file *file, struct poll_table_struct *pt)
-{
-	struct vidc_inst *inst = to_inst(file);
-	struct vb2_queue *outq = &inst->bufq_out;
-	struct vb2_queue *capq = &inst->bufq_cap;
-
-	poll_wait(file, &inst->fh.wait, pt);
-	poll_wait(file, &capq->done_wq, pt);
-	poll_wait(file, &outq->done_wq, pt);
-
-	return vidc_get_poll_flags(inst);
-}
-#else
 static unsigned int vidc_poll(struct file *file, struct poll_table_struct *pt)
 {
 	struct vidc_inst *inst = to_inst(file);
@@ -365,7 +311,7 @@ static unsigned int vidc_poll(struct file *file, struct poll_table_struct *pt)
 
 	return ret;
 }
-#endif
+
 static int vidc_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct vidc_inst *inst = to_inst(file);

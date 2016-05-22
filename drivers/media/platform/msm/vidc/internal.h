@@ -201,8 +201,6 @@ struct vidc_inst {
 #define ctrl_to_inst(ctrl)	\
 	container_of(ctrl->handler, struct vidc_inst, ctrl_handler)
 
-extern struct vidc_drv *vidc_driver;
-
 struct vidc_ctrl {
 	u32 id;
 	char name[MAX_NAME_LENGTH];

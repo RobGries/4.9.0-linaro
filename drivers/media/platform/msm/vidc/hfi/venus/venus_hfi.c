@@ -933,8 +933,7 @@ static int venus_sys_set_default_properties(struct venus_hfi_device *hdev)
 	if (ret)
 		dev_warn(dev, "setting fw debug msg ON failed (%d)\n", ret);
 
-	ret = venus_sys_set_idle_message(hdev,
-		hdev->res->sys_idle_indicator || venus_sys_idle_indicator);
+	ret = venus_sys_set_idle_message(hdev, venus_sys_idle_indicator);
 	if (ret)
 		dev_warn(dev, "setting idle response ON failed (%d)\n", ret);
 

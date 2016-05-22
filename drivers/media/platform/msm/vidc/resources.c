@@ -153,9 +153,6 @@ int get_platform_resources(struct vidc_core *core)
 	else
 		return -EINVAL;
 
-	propname = "qcom,enable-idle-indicator";
-	res->sys_idle_indicator = of_property_read_bool(np, propname);
-
 	propname = "qcom,hfi-version";
 	ret = of_property_read_string(np, propname, &res->hfi_version);
 	if (ret)
