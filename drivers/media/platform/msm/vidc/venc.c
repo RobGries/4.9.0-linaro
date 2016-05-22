@@ -1277,7 +1277,6 @@ static int start_streaming(struct vidc_inst *inst)
 {
 	struct device *dev = inst->core->dev;
 	struct hfi_device *hfi = &inst->core->hfi;
-	struct vidc_buffer *buf, *n;
 	struct hal_buffer_count_actual buf_count;
 	enum hal_property ptype = HAL_PARAM_BUFFER_COUNT_ACTUAL;
 	int ret;
@@ -1312,45 +1311,11 @@ static int start_streaming(struct vidc_inst *inst)
 		return ret;
 	}
 
-	ret = vidc_get_bufreqs(inst);
+	ret = vidc_start_streaming(inst);
 	if (ret) {
-		dev_err(dev, "buffers requirements (%d)\n", ret);
+		dev_err(dev, "start streaming fail (%d)\n", ret);
 		return ret;
 	}
-
-	ret = scratch_set_buffers(inst);
-	if (ret) {
-		dev_err(dev, "set scratch buffers failed (%d)\n", ret);
-		return ret;
-	}
-
-	ret = persist_set_buffers(inst);
-	if (ret) {
-		dev_err(dev, "set persist buffers failed (%d)\n", ret);
-		return ret;
-	}
-
-	vidc_scale_clocks(inst->core);
-
-	ret = vidc_hfi_session_load_res(hfi, inst->hfi_inst);
-	if (ret) {
-		dev_err(dev, "session load resources failed (%d)\n", ret);
-		return ret;
-	}
-
-	ret = vidc_hfi_session_start(hfi, inst->hfi_inst);
-	if (ret) {
-		dev_err(dev, "session start failed (%d)\n", ret);
-		return ret;
-	}
-
-	mutex_lock(&inst->bufqueue_lock);
-	list_for_each_entry_safe(buf, n, &inst->bufqueue, list) {
-		ret = vidc_set_session_buf(&buf->vb.vb2_buf);
-		if (ret)
-			break;
-	}
-	mutex_unlock(&inst->bufqueue_lock);
 
 	return 0;
 }
@@ -1401,71 +1366,6 @@ static void venc_buf_queue(struct vb2_buffer *vb)
 		vb2_buffer_done(vb, VB2_BUF_STATE_ERROR);
 }
 
-static int stop_streaming(struct vidc_inst *inst)
-{
-	struct hfi_device_inst *hfi_inst = inst->hfi_inst;
-	struct vidc_core *core = inst->core;
-	struct device *dev = core->dev;
-	struct hfi_device *hfi = &core->hfi;
-	int ret, streamoff;
-
-	mutex_lock(&inst->lock);
-	streamoff = inst->streamoff;
-	mutex_unlock(&inst->lock);
-
-	if (streamoff)
-		return 0;
-
-	ret = vidc_hfi_session_stop(hfi, inst->hfi_inst);
-	if (ret) {
-		dev_err(dev, "session: stop failed\n");
-		goto abort;
-	}
-
-	ret = vidc_hfi_session_release_res(hfi, inst->hfi_inst);
-	if (ret) {
-		dev_err(dev, "session: release resources failed\n");
-		goto abort;
-	}
-
-	ret = vidc_rel_session_bufs(inst);
-	if (ret) {
-		dev_err(dev, "failed to release capture buffers: %d\n", ret);
-		goto abort;
-	}
-
-	ret = scratch_release_buffers(inst, false);
-	if (ret) {
-		dev_err(dev, "failed to release scratch buffers: %d\n", ret);
-		goto abort;
-	}
-
-	ret = persist_release_buffers(inst);
-	if (ret) {
-		dev_err(dev, "failed to release persist buffers: %d\n", ret);
-		goto abort;
-	}
-
-	if (hfi_inst->state == INST_INVALID || hfi->state == CORE_INVALID) {
-		ret = -EINVAL;
-		goto abort;
-	}
-
-abort:
-	if (ret)
-		vidc_hfi_session_abort(hfi, inst->hfi_inst);
-
-	vidc_scale_clocks(inst->core);
-
-	ret = vidc_hfi_session_deinit(hfi, inst->hfi_inst);
-
-	mutex_lock(&inst->lock);
-	inst->streamoff = 1;
-	mutex_unlock(&inst->lock);
-
-	return ret;
-}
-
 static void venc_stop_streaming(struct vb2_queue *q)
 {
 	struct vidc_inst *inst = vb2_get_drv_priv(q);
@@ -1474,8 +1374,7 @@ static void venc_stop_streaming(struct vb2_queue *q)
 
 	dev_dbg(dev, "%s: type: %d\n", __func__, q->type);
 
-	ret = stop_streaming(inst);
-
+	ret = vidc_stop_streaming(inst);
 	if (ret)
 		dev_err(dev, "stop streaming failed type: %d, ret: %d\n",
 			q->type, ret);

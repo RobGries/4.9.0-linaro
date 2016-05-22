@@ -20,6 +20,7 @@
 #include "smem.h"
 #include "common.h"
 #include "load.h"
+#include "internal_buffers.h"
 
 /* helper functions */
 #if 0
@@ -242,6 +243,121 @@ vidc_get_vb2buffer(struct vidc_inst *inst, dma_addr_t addr)
 	mutex_unlock(&inst->bufqueue_lock);
 
 	return vb;
+}
+
+int vidc_stop_streaming(struct vidc_inst *inst)
+{
+	struct hfi_device_inst *hfi_inst = inst->hfi_inst;
+	struct vidc_core *core = inst->core;
+	struct device *dev = core->dev;
+	struct hfi_device *hfi = &core->hfi;
+	int ret, streamoff;
+
+	mutex_lock(&inst->lock);
+	streamoff = inst->streamoff;
+	mutex_unlock(&inst->lock);
+
+	if (streamoff)
+		return 0;
+
+	ret = vidc_hfi_session_stop(hfi, inst->hfi_inst);
+	if (ret) {
+		dev_err(dev, "session: stop failed\n");
+		goto abort;
+	}
+
+	ret = vidc_hfi_session_release_res(hfi, inst->hfi_inst);
+	if (ret) {
+		dev_err(dev, "session: release resources failed\n");
+		goto abort;
+	}
+
+	ret = vidc_rel_session_bufs(inst);
+	if (ret) {
+		dev_err(dev, "failed to release capture buffers: %d\n", ret);
+		goto abort;
+	}
+
+	ret = scratch_release_buffers(inst, false);
+	if (ret) {
+		dev_err(dev, "failed to release scratch buffers: %d\n", ret);
+		goto abort;
+	}
+
+	ret = persist_release_buffers(inst);
+	if (ret) {
+		dev_err(dev, "failed to release persist buffers: %d\n", ret);
+		goto abort;
+	}
+
+	if (hfi_inst->state == INST_INVALID || hfi->state == CORE_INVALID) {
+		ret = -EINVAL;
+		goto abort;
+	}
+
+abort:
+	if (ret)
+		vidc_hfi_session_abort(hfi, inst->hfi_inst);
+
+	vidc_scale_clocks(inst->core);
+
+	ret = vidc_hfi_session_deinit(hfi, inst->hfi_inst);
+
+	mutex_lock(&inst->lock);
+	inst->streamoff = 1;
+	mutex_unlock(&inst->lock);
+
+	return ret;
+}
+
+int vidc_start_streaming(struct vidc_inst *inst)
+{
+	struct device *dev = inst->core->dev;
+	struct hfi_device *hfi = &inst->core->hfi;
+	struct vidc_buffer *buf, *n;
+	int ret;
+
+	ret = vidc_get_bufreqs(inst);
+	if (ret) {
+		dev_err(dev, "buffers requirements (%d)\n", ret);
+		return ret;
+	}
+
+	ret = scratch_set_buffers(inst);
+	if (ret) {
+		dev_err(dev, "set scratch buffers (%d)\n", ret);
+		return ret;
+	}
+
+	ret = persist_set_buffers(inst);
+	if (ret) {
+		dev_err(dev, "set persist buffers (%d)\n", ret);
+		return ret;
+	}
+
+	vidc_scale_clocks(inst->core);
+
+	ret = vidc_hfi_session_load_res(hfi, inst->hfi_inst);
+	if (ret) {
+		dev_err(dev, "session: load resources (%d)\n", ret);
+		return ret;
+	}
+
+	ret = vidc_hfi_session_start(hfi, inst->hfi_inst);
+	if (ret) {
+		dev_err(dev, "session: start failed (%d)\n", ret);
+		return ret;
+	}
+
+	mutex_lock(&inst->bufqueue_lock);
+	list_for_each_entry_safe(buf, n, &inst->bufqueue, list) {
+		ret = vidc_set_session_buf(&buf->vb.vb2_buf);
+		if (ret)
+			break;
+	}
+	mutex_unlock(&inst->bufqueue_lock);
+
+	return ret;
 }
 
 int vidc_session_flush(struct vidc_inst *inst, u32 flags)

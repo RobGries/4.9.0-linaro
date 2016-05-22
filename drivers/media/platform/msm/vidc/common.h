@@ -32,6 +32,8 @@ struct vidc_buffer {
 
 struct vb2_v4l2_buffer *
 vidc_get_vb2buffer(struct vidc_inst *inst, dma_addr_t addr);
+int vidc_stop_streaming(struct vidc_inst *inst);
+int vidc_start_streaming(struct vidc_inst *inst);
 int vidc_session_flush(struct vidc_inst *inst, u32 flags);
 int vidc_get_bufreqs(struct vidc_inst *inst);
 struct hal_buffer_requirements *vidc_get_buff_req_buffer(struct vidc_inst *inst,
