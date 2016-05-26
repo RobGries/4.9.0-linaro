@@ -179,6 +179,12 @@ static int vidc_open(struct file *file)
 
 	dev_dbg(dev, "%s: enter\n", __func__);
 
+	ret = pm_runtime_get_sync(dev);
+	if (ret < 0) {
+		dev_err(dev, "%s: pm_runtime_get_sync (%d)\n", __func__, ret);
+		return ret;
+	}
+
 	inst = kzalloc(sizeof(*inst), GFP_KERNEL);
 	if (!inst)
 		return -ENOMEM;
@@ -205,31 +211,13 @@ static int vidc_open(struct file *file)
 		goto err_free_inst;
 	}
 
-	ret = pm_runtime_get_sync(dev);
-	if (ret < 0) {
-		dev_err(dev, "pm_runtime_get_sync (%d)\n", ret);
-		goto err_del_mem_clnt;
-	}
-
-	ret = vidc_rproc_boot(core);
-	if (ret) {
-		dev_err(dev, "rproc boot failed (%d)\n", ret);
-		goto err_dis_clks;
-	}
-
-	ret = vidc_hfi_core_init(&core->hfi);
-	if (ret) {
-		dev_err(dev, "core: init failed (%d)\n", ret);
-		goto err_rproc_shutdown;
-	}
-
 	if (inst->session_type == VIDC_DECODER)
 		ret = vdec_open(inst);
 	else
 		ret = venc_open(inst);
 
 	if (ret)
-		goto err_core_deinit;
+		goto err_del_mem_clnt;
 
 	if (inst->session_type == VIDC_DECODER)
 		v4l2_fh_init(&inst->fh, &core->vdev_dec);
@@ -248,12 +236,6 @@ static int vidc_open(struct file *file)
 
 	return 0;
 
-err_core_deinit:
-	vidc_hfi_core_deinit(&core->hfi);
-err_rproc_shutdown:
-	vidc_rproc_shutdown(core);
-err_dis_clks:
-	pm_runtime_put_sync_suspend(dev);
 err_del_mem_clnt:
 	smem_delete_client(inst->mem_client);
 err_free_inst:
@@ -280,7 +262,7 @@ static int vidc_close(struct file *file)
 
 	ret = pm_runtime_put_sync(dev);
 	if (ret)
-		dev_err(dev, "pm_runtime_put_sync (%d)\n", ret);
+		dev_err(dev, "%s: pm_runtime_put_sync (%d)\n", __func__, ret);
 
 	smem_delete_client(inst->mem_client);
 
@@ -468,14 +450,44 @@ static int vidc_probe(struct platform_device *pdev)
 		goto err_hfi_destroy;
 	}
 
+	pm_runtime_enable(dev);
+
+	ret = pm_runtime_get_sync(dev);
+	if (ret < 0) {
+		dev_err(dev, "pm_runtime_get_sync (%d)\n", ret);
+		goto err_runtime_disable;
+	}
+
+	ret = vidc_rproc_boot(core);
+	if (ret) {
+		dev_err(dev, "rproc boot failed (%d)\n", ret);
+		goto err_runtime_disable;
+	}
+
+	ret = vidc_hfi_core_init(&core->hfi);
+	if (ret) {
+		dev_err(dev, "core: init failed (%d)\n", ret);
+		goto err_rproc_shutdown;
+	}
+
+	ret = pm_runtime_put_sync(dev);
+	if (ret) {
+		dev_err(dev, "pm_runtime_put_sync (%d)\n", ret);
+		goto err_core_deinit;
+	}
+
 	mutex_lock(&vidc_driver->lock);
 	list_add_tail(&core->list, &vidc_driver->cores);
 	mutex_unlock(&vidc_driver->lock);
 
-	pm_runtime_enable(dev);
-
 	return 0;
 
+err_core_deinit:
+	vidc_hfi_core_deinit(&core->hfi);
+err_rproc_shutdown:
+	vidc_rproc_shutdown(core);
+err_runtime_disable:
+	pm_runtime_disable(dev);
 err_hfi_destroy:
 	vidc_hfi_destroy(&core->hfi);
 err_venc_deinit:
@@ -497,11 +509,13 @@ static int vidc_remove(struct platform_device *pdev)
 	if (!core)
 		return -EINVAL;
 
-	pm_runtime_disable(core->dev);
-
 	ret = vidc_hfi_core_deinit(&core->hfi);
-	if (ret)
+	if (ret) {
 		dev_err(core->dev, "core: deinit failed (%d)\n", ret);
+		return ret;
+	}
+
+	pm_runtime_disable(core->dev);
 
 	vidc_hfi_destroy(&core->hfi);
 	vdec_deinit(core, &core->vdev_dec);
@@ -569,7 +583,6 @@ static int vidc_runtime_resume(struct device *dev)
 	}
 
 	ret = vidc_hfi_core_resume(&core->hfi);
-
 	if (ret)
 		dev_err(dev, "%s exit (%d)\n", __func__, ret);
 
