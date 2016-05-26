@@ -107,8 +107,10 @@ int vidc_hfi_core_deinit(struct hfi_device *hfi)
 	if (hfi->state == CORE_UNINIT)
 		goto unlock;
 
-	if (!list_empty(&hfi->instances))
+	if (!list_empty(&hfi->instances)) {
+		ret = -EBUSY;
 		goto unlock;
+	}
 
 	/*
 	 * Delay unloading of firmware. This is useful
