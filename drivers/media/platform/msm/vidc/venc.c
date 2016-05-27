@@ -1105,8 +1105,8 @@ static int venc_init_session(struct vidc_inst *inst)
 	enum hal_property ptype = HAL_PARAM_FRAME_SIZE;
 	int ret;
 
-	if (inst->hfi_inst->state >= INST_OPEN)
-		return 0;
+//	if (inst->hfi_inst->state >= INST_OPEN)
+//		return 0;
 
 	ret = vidc_hfi_session_init(hfi, inst->hfi_inst, pixfmt, VIDC_ENCODER);
 	if (ret) {
@@ -1207,6 +1207,40 @@ static int venc_queue_setup(struct vb2_queue *q, const void *parg,
 	return ret;
 }
 
+static int venc_check_configuration(struct vidc_inst *inst)
+{
+	struct hal_buffer_requirements bufreq;
+	struct device *dev = inst->core->dev;
+	int ret;
+
+	ret = vidc_bufrequirements(inst, HAL_BUFFER_OUTPUT, &bufreq);
+	if (ret)
+		return ret;
+
+	if (inst->num_output_bufs < bufreq.count_actual ||
+	    inst->num_output_bufs < bufreq.count_min) {
+		dev_err(dev,
+			"%s: different output buffer expectation (%u - %u)\n",
+			__func__, inst->num_output_bufs, bufreq.count_actual);
+		ret = -EINVAL;
+	}
+
+	memset(&bufreq, 0, sizeof(bufreq));
+	ret = vidc_bufrequirements(inst, HAL_BUFFER_INPUT, &bufreq);
+	if (ret)
+		return ret;
+
+	if (inst->num_input_bufs < bufreq.count_actual ||
+	    inst->num_input_bufs < bufreq.count_min) {
+		dev_err(dev,
+			"%s: different input buffer expectation (%u - %u)\n",
+			__func__, inst->num_output_bufs, bufreq.count_actual);
+		ret = -EINVAL;
+	}
+
+	return 0;
+}
+
 static int venc_start_streaming(struct vb2_queue *q, unsigned int count)
 {
 	struct vidc_inst *inst = vb2_get_drv_priv(q);
@@ -1238,6 +1272,14 @@ static int venc_start_streaming(struct vb2_queue *q, unsigned int count)
 		dev_err(dev, "set properties (%d)\n", ret);
 		return ret;
 	}
+
+	ret = venc_init_session(inst);
+	if (ret)
+		return ret;
+
+	ret = venc_check_configuration(inst);
+	if (ret)
+		return ret;
 
 	buf_count.type = HAL_BUFFER_OUTPUT;
 	buf_count.count_actual = inst->num_output_bufs;

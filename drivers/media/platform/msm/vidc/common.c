@@ -10,11 +10,12 @@
  * GNU General Public License for more details.
  *
  */
-
+//#define DEBUG
 #include <linux/jiffies.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/completion.h>
+#include <linux/pm_runtime.h>
 #include <media/msm-v4l2-controls.h>
 #include <media/videobuf2-dma-sg.h>
 
@@ -276,6 +277,8 @@ int vidc_vb2_buf_init(struct vb2_buffer *vb)
 	bai->num_buffers = 1;
 	bai->device_addr = sg_dma_address(sgt->sgl);
 
+	dev_dbg(dev, "%s: set session buffers\n", __func__);
+
 	ret = vidc_hfi_session_set_buffers(hfi, inst->hfi_inst, bai);
 	if (ret) {
 		dev_err(dev, "%s: session: set buffer failed\n", __func__);
@@ -407,6 +410,11 @@ abort:
 	if (ret)
 		dev_err(dev, "stop streaming failed type: %d, ret: %d\n",
 			q->type, ret);
+#if 0
+	ret = pm_runtime_put_sync(dev);
+	if (ret < 0)
+		dev_err(dev, "%s: pm_runtime_put_sync (%d)\n", __func__, ret);
+#endif
 }
 
 int vidc_start_streaming(struct vidc_inst *inst)

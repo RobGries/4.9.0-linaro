@@ -10,7 +10,7 @@
  * GNU General Public License for more details.
  *
  */
-
+//#define DEBUG
 #include <linux/kernel.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
@@ -406,11 +406,11 @@ static int venus_iface_cmdq_write_nolock(struct venus_hfi_device *hdev,
 		dev_err(dev, "write to iface cmd queue failed (%d)\n", ret);
 		return ret;
 	}
-
+#if 0
 	ret = venus_power_on(hdev);
 	if (ret)
 		return ret;
-
+#endif
 	if (rx_req)
 		venus_soft_int(hdev);
 
@@ -531,6 +531,13 @@ static int venus_run(struct venus_hfi_device *hdev)
 	 */
 	venus_set_registers(hdev);
 
+	if (!hdev->ifaceq_table.da) {
+		dev_err(dev,
+			"%s: invalid interface queue table device address\n",
+			__func__);
+		return -EINVAL;
+	}
+
 	venus_writel(hdev, VIDC_UC_REGION_ADDR, hdev->ifaceq_table.da);
 	venus_writel(hdev, VIDC_UC_REGION_SIZE, SHARED_QSIZE);
 	venus_writel(hdev, VIDC_CPU_CS_SCIACMDARG2, hdev->ifaceq_table.da);
@@ -570,7 +577,7 @@ static int venus_halt_axi(struct venus_hfi_device *hdev)
 				 POLL_INTERVAL_US,
 				 VENUS_VBIF_AXI_HALT_ACK_TIMEOUT_US);
 	if (ret) {
-		dev_warn(dev, "AXI bus port halt timeout\n");
+		dev_err(dev, "AXI bus port halt timeout\n");
 		return ret;
 	}
 
@@ -586,16 +593,14 @@ static int venus_power_off(struct venus_hfi_device *hdev)
 		return 0;
 
 	ret = venus_halt_axi(hdev);
-	if (ret) {
-		dev_warn(dev, "failed to halt AXI\n");
+	if (ret)
 		return ret;
-	}
 
-	dev_dbg(dev, "entering power collapse\n");
+	dev_err(dev, "entering power collapse\n");
 
 	ret = venus_tzbsp_set_video_state(TZBSP_VIDEO_STATE_SUSPEND);
 	if (ret) {
-		dev_warn(dev, "failed to suspend video core (%d)\n", ret);
+		dev_err(dev, "failed to suspend video core (%d)\n", ret);
 		return ret;
 	}
 
@@ -608,7 +613,7 @@ static int venus_power_off(struct venus_hfi_device *hdev)
 
 	hdev->power_enabled = false;
 
-	dev_dbg(dev, "Venus power collapsed\n");
+	dev_err(dev, "Venus power collapsed\n");
 
 	return 0;
 }
@@ -621,7 +626,7 @@ static int venus_power_on(struct venus_hfi_device *hdev)
 	if (hdev->power_enabled)
 		return 0;
 
-	dev_dbg(dev, "resuming from power collapse\n");
+	dev_err(dev, "resuming from power collapse\n");
 
 	/* Reboot the firmware */
 	ret = venus_tzbsp_set_video_state(TZBSP_VIDEO_STATE_RESUME);
@@ -640,7 +645,7 @@ static int venus_power_on(struct venus_hfi_device *hdev)
 	 */
 	hdev->power_enabled = true;
 
-	dev_dbg(dev, "resumed from power collapse\n");
+	dev_err(dev, "resumed from power collapse\n");
 
 	return 0;
 
@@ -1157,6 +1162,9 @@ static int venus_hfi_core_init(struct hfi_device *hfi)
 	struct hfi_sys_init_pkt pkt;
 	int ret;
 
+	dev_dbg(dev, "%s: enter (power:%u, suspend:%u)\n", __func__,
+		hdev->power_enabled, hdev->suspended);
+
 	hdev->intr_status = 0;
 
 	call_hfi_pkt_op(hdev, sys_init, &pkt, HFI_VIDEO_ARCH_OX);
@@ -1176,6 +1184,9 @@ static int venus_hfi_core_init(struct hfi_device *hfi)
 		return ret;
 
 	venus_set_state(hdev, VENUS_STATE_INIT);
+
+	dev_dbg(dev, "%s: exit  (power:%u, suspend:%u)\n", __func__,
+		hdev->power_enabled, hdev->suspended);
 
 	return 0;
 }
@@ -1483,8 +1494,8 @@ static int venus_hfi_resume(struct hfi_device *hfi)
 	dev_dbg(hdev->dev, "%s: enter (power:%d, suspended:%d)\n", __func__,
 		 hdev->power_enabled, hdev->suspended);
 
-	if (hdev->suspended == false)
-		goto unlock;
+//	if (hdev->suspended == false)
+//		goto unlock;
 
 	ret = venus_power_on(hdev);
 

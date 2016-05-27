@@ -10,7 +10,7 @@
  * GNU General Public License for more details.
  *
  */
-
+#define DEBUG
 #include <linux/init.h>
 #include <linux/ioctl.h>
 #include <linux/list.h>
@@ -178,13 +178,13 @@ static int vidc_open(struct file *file)
 	int ret = 0;
 
 	dev_dbg(dev, "%s: enter\n", __func__);
-
+#if 1
 	ret = pm_runtime_get_sync(dev);
 	if (ret < 0) {
 		dev_err(dev, "%s: pm_runtime_get_sync (%d)\n", __func__, ret);
 		return ret;
 	}
-
+#endif
 	inst = kzalloc(sizeof(*inst), GFP_KERNEL);
 	if (!inst)
 		return -ENOMEM;
@@ -259,11 +259,11 @@ static int vidc_close(struct file *file)
 		venc_close(inst);
 
 	vidc_del_inst(core, inst);
-
+#if 1
 	ret = pm_runtime_put_sync(dev);
 	if (ret)
 		dev_err(dev, "%s: pm_runtime_put_sync (%d)\n", __func__, ret);
-
+#endif
 	smem_delete_client(inst->mem_client);
 
 	mutex_destroy(&inst->bufqueue_lock);
@@ -415,18 +415,6 @@ static int vidc_probe(struct platform_device *pdev)
 	INIT_LIST_HEAD(&core->instances);
 	mutex_init(&core->lock);
 
-	ret = v4l2_device_register(dev, &core->v4l2_dev);
-	if (ret)
-		return ret;
-
-	ret = vdec_init(core, &core->vdev_dec);
-	if (ret)
-		goto err_dev_unregister;
-
-	ret = venc_init(core, &core->vdev_enc);
-	if (ret)
-		goto err_vdec_deinit;
-
 	core->hfi.core_ops = &vidc_core_ops;
 	core->hfi.hfi_type = core->hfi_type;
 	core->hfi.dev = dev;
@@ -450,6 +438,20 @@ static int vidc_probe(struct platform_device *pdev)
 		goto err_hfi_destroy;
 	}
 
+	ret = enable_clocks(&core->res);
+	if (ret) {
+		dev_err(dev, "%s: cannot enable clocks\n", __func__);
+		return ret;
+	}
+
+	ret = vidc_rproc_boot(core);
+	if (ret) {
+		dev_err(dev, "rproc boot failed (%d)\n", ret);
+		goto err_runtime_disable;
+	}
+
+	disable_clocks(&core->res);
+
 	pm_runtime_enable(dev);
 
 	ret = pm_runtime_get_sync(dev);
@@ -458,11 +460,8 @@ static int vidc_probe(struct platform_device *pdev)
 		goto err_runtime_disable;
 	}
 
-	ret = vidc_rproc_boot(core);
-	if (ret) {
-		dev_err(dev, "rproc boot failed (%d)\n", ret);
-		goto err_runtime_disable;
-	}
+	dev_dbg(dev, "pm_runtime_get_sync (%d) is_suspended:%d\n", ret,
+		pm_runtime_suspended(dev));
 
 	ret = vidc_hfi_core_init(&core->hfi);
 	if (ret) {
@@ -476,9 +475,23 @@ static int vidc_probe(struct platform_device *pdev)
 		goto err_core_deinit;
 	}
 
+	ret = v4l2_device_register(dev, &core->v4l2_dev);
+	if (ret)
+		return ret;
+
+	ret = vdec_init(core, &core->vdev_dec);
+	if (ret)
+		goto err_dev_unregister;
+
+	ret = venc_init(core, &core->vdev_enc);
+	if (ret)
+		goto err_vdec_deinit;
+
 	mutex_lock(&vidc_driver->lock);
 	list_add_tail(&core->list, &vidc_driver->cores);
 	mutex_unlock(&vidc_driver->lock);
+
+	dev_dbg(dev, "%s: exit\n", __func__);
 
 	return 0;
 
@@ -487,6 +500,7 @@ err_core_deinit:
 err_rproc_shutdown:
 	vidc_rproc_shutdown(core);
 err_runtime_disable:
+	pm_runtime_set_suspended(dev);
 	pm_runtime_disable(dev);
 err_hfi_destroy:
 	vidc_hfi_destroy(&core->hfi);
@@ -496,6 +510,7 @@ err_vdec_deinit:
 	vdec_deinit(core, &core->vdev_dec);
 err_dev_unregister:
 	v4l2_device_unregister(&core->v4l2_dev);
+	dev_dbg(dev, "%s: exit (%d)\n", __func__, ret);
 	return ret;
 }
 
@@ -562,11 +577,15 @@ static int vidc_runtime_suspend(struct device *dev)
 	struct vidc_core *core = dev_get_drvdata(dev);
 	int ret;
 
+	dev_dbg(dev, "%s: enter\n", __func__);
+
 	ret = vidc_hfi_core_suspend(&core->hfi);
 	if (ret)
 		dev_err(dev, "%s: venus suspend failed (%d)", __func__, ret);
 
 	disable_clocks(&core->res);
+
+	dev_dbg(dev, "%s: exit (%d)\n", __func__, ret);
 
 	return ret;
 }
@@ -575,6 +594,8 @@ static int vidc_runtime_resume(struct device *dev)
 {
 	struct vidc_core *core = dev_get_drvdata(dev);
 	int ret;
+
+	dev_dbg(dev, "%s: enter\n", __func__);
 
 	ret = enable_clocks(&core->res);
 	if (ret) {
@@ -585,6 +606,8 @@ static int vidc_runtime_resume(struct device *dev)
 	ret = vidc_hfi_core_resume(&core->hfi);
 	if (ret)
 		dev_err(dev, "%s exit (%d)\n", __func__, ret);
+
+	dev_dbg(dev, "%s: exit (%d)\n", __func__, ret);
 
 	return ret;
 }

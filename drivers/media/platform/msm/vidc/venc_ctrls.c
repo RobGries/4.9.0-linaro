@@ -12,7 +12,7 @@
  * GNU General Public License for more details.
  *
  */
-#define DEBUG
+
 #include <linux/cpumask.h>
 #include <linux/types.h>
 #include <linux/kernel.h>

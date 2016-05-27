@@ -10,8 +10,9 @@
  * GNU General Public License for more details.
  *
  */
-
+//#define DEBUG
 #include <linux/slab.h>
+#include <linux/pm_runtime.h>
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-event.h>
 #include <media/v4l2-ctrls.h>
@@ -754,8 +755,8 @@ static int vdec_init_session(struct vidc_inst *inst)
 	enum hal_property ptype;
 	int ret;
 
-	if (inst->hfi_inst->state >= INST_OPEN)
-		return 0;
+//	if (inst->hfi_inst->state >= INST_OPEN)
+//		return 0;
 
 	ret = vidc_hfi_session_init(hfi, inst->hfi_inst, pixfmt, VIDC_DECODER);
 	if (ret) {
@@ -842,7 +843,13 @@ static int vdec_queue_setup(struct vb2_queue *q, const void *parg,
 		break;
 	case V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE:
 		*num_planes = inst->fmt_cap->num_planes;
-
+#if 0
+		ret = pm_runtime_get_sync(dev);
+		if (ret < 0) {
+			dev_err(dev, "%s: pm_runtime_get_sync (%d)\n", __func__, ret);
+			return ret;
+		}
+#endif
 		ret = vdec_init_session(inst);
 		if (ret)
 			return ret;
@@ -858,7 +865,12 @@ static int vdec_queue_setup(struct vb2_queue *q, const void *parg,
 							inst->width);
 			alloc_ctxs[p] = inst->vb2_ctx_cap;
 		}
-
+#if 0
+		ret = pm_runtime_put_sync(dev);
+		if (ret)
+			dev_err(dev, "%s: pm_runtime_put_sync (%d)\n", __func__,
+				ret);
+#endif
 		inst->num_output_bufs = *num_buffers;
 		inst->fmts_settled |= VIDC_FMT_CAP;
 
@@ -873,6 +885,40 @@ static int vdec_queue_setup(struct vb2_queue *q, const void *parg,
 	dev_dbg(dev, "%s: exit (%d)\n", __func__, ret);
 
 	return ret;
+}
+
+static int vdec_check_configuration(struct vidc_inst *inst)
+{
+	struct hal_buffer_requirements bufreq;
+	struct device *dev = inst->core->dev;
+	int ret;
+
+	ret = vidc_bufrequirements(inst, HAL_BUFFER_OUTPUT, &bufreq);
+	if (ret)
+		return ret;
+
+	if (inst->num_output_bufs < bufreq.count_actual ||
+	    inst->num_output_bufs < bufreq.count_min) {
+		dev_err(dev,
+			"%s: different output buffer expectation (%u - %u)\n",
+			__func__, inst->num_output_bufs, bufreq.count_actual);
+		ret = -EINVAL;
+	}
+
+	memset(&bufreq, 0, sizeof(bufreq));
+	ret = vidc_bufrequirements(inst, HAL_BUFFER_INPUT, &bufreq);
+	if (ret)
+		return ret;
+
+	if (inst->num_input_bufs < bufreq.count_actual ||
+	    inst->num_input_bufs < bufreq.count_min) {
+		dev_err(dev,
+			"%s: different input buffer expectation (%u - %u)\n",
+			__func__, inst->num_output_bufs, bufreq.count_actual);
+		ret = -EINVAL;
+	}
+
+	return 0;
 }
 
 static int vdec_start_streaming(struct vb2_queue *q, unsigned int count)
@@ -901,15 +947,25 @@ static int vdec_start_streaming(struct vb2_queue *q, unsigned int count)
 
 	if (!vb2_is_streaming(queue))
 		return 0;
-
+#if 0
+	ret = pm_runtime_get_sync(dev);
+	if (ret < 0) {
+		dev_err(dev, "%s: pm_runtime_get_sync (%d)\n", __func__, ret);
+		return ret;
+	}
+#endif
 	inst->in_reconfig = false;
 	inst->sequence = 0;
+
+	ret = vdec_set_properties(inst);
+	if (ret)
+		return ret;
 
 	ret = vdec_init_session(inst);
 	if (ret)
 		return ret;
 
-	ret = vdec_set_properties(inst);
+	ret = vdec_check_configuration(inst);
 	if (ret)
 		return ret;
 
