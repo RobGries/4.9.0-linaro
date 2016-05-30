@@ -531,13 +531,6 @@ static int venus_run(struct venus_hfi_device *hdev)
 	 */
 	venus_set_registers(hdev);
 
-	if (!hdev->ifaceq_table.da) {
-		dev_err(dev,
-			"%s: invalid interface queue table device address\n",
-			__func__);
-		return -EINVAL;
-	}
-
 	venus_writel(hdev, VIDC_UC_REGION_ADDR, hdev->ifaceq_table.da);
 	venus_writel(hdev, VIDC_UC_REGION_SIZE, SHARED_QSIZE);
 	venus_writel(hdev, VIDC_CPU_CS_SCIACMDARG2, hdev->ifaceq_table.da);
@@ -545,8 +538,8 @@ static int venus_run(struct venus_hfi_device *hdev)
 	if (hdev->sfr.da)
 		venus_writel(hdev, VIDC_SFR_ADDR, hdev->sfr.da);
 
-	venus_writel(hdev, VIDC_WRAPPER_CLOCK_CONFIG, 0);
-	venus_writel(hdev, VIDC_WRAPPER_CPU_CLOCK_CONFIG, 0);
+//	venus_writel(hdev, VIDC_WRAPPER_CLOCK_CONFIG, 0);
+//	venus_writel(hdev, VIDC_WRAPPER_CPU_CLOCK_CONFIG, 0);
 
 	ret = venus_reset_core(hdev);
 	if (ret) {
@@ -596,7 +589,7 @@ static int venus_power_off(struct venus_hfi_device *hdev)
 	if (ret)
 		return ret;
 
-	dev_err(dev, "entering power collapse\n");
+	dev_dbg(dev, "entering power collapse\n");
 
 	ret = venus_tzbsp_set_video_state(TZBSP_VIDEO_STATE_SUSPEND);
 	if (ret) {
@@ -613,7 +606,7 @@ static int venus_power_off(struct venus_hfi_device *hdev)
 
 	hdev->power_enabled = false;
 
-	dev_err(dev, "Venus power collapsed\n");
+	dev_dbg(dev, "Venus power collapsed\n");
 
 	return 0;
 }
@@ -626,7 +619,7 @@ static int venus_power_on(struct venus_hfi_device *hdev)
 	if (hdev->power_enabled)
 		return 0;
 
-	dev_err(dev, "resuming from power collapse\n");
+	dev_dbg(dev, "resuming from power collapse\n");
 
 	/* Reboot the firmware */
 	ret = venus_tzbsp_set_video_state(TZBSP_VIDEO_STATE_RESUME);
@@ -645,7 +638,7 @@ static int venus_power_on(struct venus_hfi_device *hdev)
 	 */
 	hdev->power_enabled = true;
 
-	dev_err(dev, "resumed from power collapse\n");
+	dev_dbg(dev, "resumed from power collapse\n");
 
 	return 0;
 
@@ -1119,6 +1112,9 @@ static irqreturn_t venus_isr(int irq, struct hfi_device *hfi)
 	struct venus_hfi_device *hdev = to_hfi_priv(hfi);
 	u32 status;
 
+	if (!hdev)
+		return IRQ_NONE;
+
 	status = venus_readl(hdev, VIDC_WRAPPER_INTR_STATUS);
 
 	if (status & VIDC_WRAPPER_INTR_STATUS_A2H_BMSK ||
@@ -1494,8 +1490,8 @@ static int venus_hfi_resume(struct hfi_device *hfi)
 	dev_dbg(hdev->dev, "%s: enter (power:%d, suspended:%d)\n", __func__,
 		 hdev->power_enabled, hdev->suspended);
 
-//	if (hdev->suspended == false)
-//		goto unlock;
+	if (hdev->suspended == false)
+		goto unlock;
 
 	ret = venus_power_on(hdev);
 
@@ -1653,6 +1649,7 @@ int venus_hfi_create(struct hfi_device *hfi, struct vidc_resources *res)
 	hdev->irq = res->irq;
 	hdev->base = res->base;
 	hdev->dev = hfi->dev;
+	hdev->suspended = true;
 
 	hfi->priv = hdev;
 	hfi->ops = &venus_hfi_ops;

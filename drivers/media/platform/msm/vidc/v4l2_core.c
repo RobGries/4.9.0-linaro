@@ -10,7 +10,7 @@
  * GNU General Public License for more details.
  *
  */
-#define DEBUG
+
 #include <linux/init.h>
 #include <linux/ioctl.h>
 #include <linux/list.h>
@@ -415,6 +415,17 @@ static int vidc_probe(struct platform_device *pdev)
 	INIT_LIST_HEAD(&core->instances);
 	mutex_init(&core->lock);
 
+	ret = devm_request_threaded_irq(dev, res->irq, vidc_isr,
+					vidc_isr_thread,
+					IRQF_TRIGGER_HIGH | IRQF_ONESHOT,
+					"vidc", &core->hfi);
+	if (ret) {
+		mutex_lock(&vidc_driver->lock);
+		vidc_driver->num_cores--;
+		mutex_unlock(&vidc_driver->lock);
+		return ret;
+	}
+
 	core->hfi.core_ops = &vidc_core_ops;
 	core->hfi.hfi_type = core->hfi_type;
 	core->hfi.dev = dev;
@@ -424,33 +435,21 @@ static int vidc_probe(struct platform_device *pdev)
 		mutex_lock(&vidc_driver->lock);
 		vidc_driver->num_cores--;
 		mutex_unlock(&vidc_driver->lock);
-		goto err_venc_deinit;
-	}
-
-	ret = devm_request_threaded_irq(dev, res->irq, vidc_isr,
-					vidc_isr_thread,
-					IRQF_TRIGGER_HIGH | IRQF_ONESHOT,
-					"vidc", &core->hfi);
-	if (ret) {
-		mutex_lock(&vidc_driver->lock);
-		vidc_driver->num_cores--;
-		mutex_unlock(&vidc_driver->lock);
-		goto err_hfi_destroy;
+		return ret;
 	}
 
 	ret = enable_clocks(&core->res);
 	if (ret) {
 		dev_err(dev, "%s: cannot enable clocks\n", __func__);
-		return ret;
+		goto err_hfi_destroy;
 	}
 
 	ret = vidc_rproc_boot(core);
 	if (ret) {
+		disable_clocks(&core->res);
 		dev_err(dev, "rproc boot failed (%d)\n", ret);
-		goto err_runtime_disable;
+		goto err_hfi_destroy;
 	}
-
-	disable_clocks(&core->res);
 
 	pm_runtime_enable(dev);
 
@@ -475,9 +474,11 @@ static int vidc_probe(struct platform_device *pdev)
 		goto err_core_deinit;
 	}
 
+	disable_clocks(&core->res);
+
 	ret = v4l2_device_register(dev, &core->v4l2_dev);
 	if (ret)
-		return ret;
+		goto err_core_deinit;
 
 	ret = vdec_init(core, &core->vdev_dec);
 	if (ret)
@@ -495,6 +496,10 @@ static int vidc_probe(struct platform_device *pdev)
 
 	return 0;
 
+err_vdec_deinit:
+	vdec_deinit(core, &core->vdev_dec);
+err_dev_unregister:
+	v4l2_device_unregister(&core->v4l2_dev);
 err_core_deinit:
 	vidc_hfi_core_deinit(&core->hfi);
 err_rproc_shutdown:
@@ -504,12 +509,7 @@ err_runtime_disable:
 	pm_runtime_disable(dev);
 err_hfi_destroy:
 	vidc_hfi_destroy(&core->hfi);
-err_venc_deinit:
-	venc_deinit(core, &core->vdev_enc);
-err_vdec_deinit:
-	vdec_deinit(core, &core->vdev_dec);
-err_dev_unregister:
-	v4l2_device_unregister(&core->v4l2_dev);
+
 	dev_dbg(dev, "%s: exit (%d)\n", __func__, ret);
 	return ret;
 }
