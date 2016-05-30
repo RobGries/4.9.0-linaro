@@ -12,6 +12,7 @@
  */
 
 #include <linux/slab.h>
+#include <linux/pm_runtime.h>
 #include <media/msm-v4l2-controls.h>
 #include <media/videobuf2-dma-sg.h>
 #include <media/v4l2-ioctl.h>
@@ -1182,6 +1183,14 @@ static int venc_queue_setup(struct vb2_queue *q, const void *parg,
 		break;
 	case V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE:
 		*num_planes = inst->fmt_cap->num_planes;
+#if 1
+		ret = pm_runtime_get_sync(dev);
+		if (ret < 0) {
+			dev_err(dev, "%s: pm_runtime_get_sync (%d)\n", __func__,
+				ret);
+			return ret;
+		}
+#endif
 
 		ret = venc_init_session(inst);
 		if (ret)
@@ -1190,6 +1199,13 @@ static int venc_queue_setup(struct vb2_queue *q, const void *parg,
 		ret = vidc_bufrequirements(inst, HAL_BUFFER_OUTPUT, &bufreq);
 		if (ret)
 			return ret;
+
+#if 1
+		ret = pm_runtime_put_sync(dev);
+		if (ret)
+			dev_err(dev, "%s: pm_runtime_put_sync (%d)\n", __func__,
+				ret);
+#endif
 
 		*num_buffers = max(*num_buffers, bufreq.count_actual);
 		*num_buffers = clamp_val(*num_buffers, 4, VIDEO_MAX_FRAME);
@@ -1264,6 +1280,14 @@ static int venc_start_streaming(struct vb2_queue *q, unsigned int count)
 
 	if (!vb2_is_streaming(queue))
 		return 0;
+
+#if 1
+	ret = pm_runtime_get_sync(dev);
+	if (ret < 0) {
+		dev_err(dev, "%s: pm_runtime_get_sync (%d)\n", __func__, ret);
+		return ret;
+	}
+#endif
 
 	inst->sequence = 0;
 

@@ -843,7 +843,7 @@ static int vdec_queue_setup(struct vb2_queue *q, const void *parg,
 		break;
 	case V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE:
 		*num_planes = inst->fmt_cap->num_planes;
-#if 0
+#if 1
 		ret = pm_runtime_get_sync(dev);
 		if (ret < 0) {
 			dev_err(dev, "%s: pm_runtime_get_sync (%d)\n", __func__, ret);
@@ -865,7 +865,7 @@ static int vdec_queue_setup(struct vb2_queue *q, const void *parg,
 							inst->width);
 			alloc_ctxs[p] = inst->vb2_ctx_cap;
 		}
-#if 0
+#if 1
 		ret = pm_runtime_put_sync(dev);
 		if (ret)
 			dev_err(dev, "%s: pm_runtime_put_sync (%d)\n", __func__,
@@ -947,7 +947,7 @@ static int vdec_start_streaming(struct vb2_queue *q, unsigned int count)
 
 	if (!vb2_is_streaming(queue))
 		return 0;
-#if 0
+#if 1
 	ret = pm_runtime_get_sync(dev);
 	if (ret < 0) {
 		dev_err(dev, "%s: pm_runtime_get_sync (%d)\n", __func__, ret);

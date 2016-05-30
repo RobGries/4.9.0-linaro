@@ -178,7 +178,7 @@ static int vidc_open(struct file *file)
 	int ret = 0;
 
 	dev_dbg(dev, "%s: enter\n", __func__);
-#if 1
+#if 0
 	ret = pm_runtime_get_sync(dev);
 	if (ret < 0) {
 		dev_err(dev, "%s: pm_runtime_get_sync (%d)\n", __func__, ret);
@@ -259,7 +259,7 @@ static int vidc_close(struct file *file)
 		venc_close(inst);
 
 	vidc_del_inst(core, inst);
-#if 1
+#if 0
 	ret = pm_runtime_put_sync(dev);
 	if (ret)
 		dev_err(dev, "%s: pm_runtime_put_sync (%d)\n", __func__, ret);

@@ -49,7 +49,4 @@ enum hal_buffer_layout_type
 vidc_buffer_layout(enum v4l2_mpeg_vidc_video_mvc_layout index);
 int vidc_set_color_format(struct vidc_inst *inst, enum hal_buffer_type type,
 			  u32 pixfmt);
-int vidc_set_session_buf(struct vb2_buffer *vb);
-int vidc_rel_session_bufs(struct vidc_inst *inst);
-
 #endif

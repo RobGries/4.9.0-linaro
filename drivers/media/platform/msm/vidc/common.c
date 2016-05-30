@@ -56,7 +56,7 @@ static void __fill_flags(struct hal_frame_data *frame_data, __u32 vb_flags)
 }
 #endif
 
-int vidc_set_session_buf(struct vb2_buffer *vb)
+static int vidc_set_session_buf(struct vb2_buffer *vb)
 {
 	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
 	struct vb2_queue *q = vb->vb2_queue;
@@ -111,7 +111,7 @@ int vidc_set_session_buf(struct vb2_buffer *vb)
 	return 0;
 }
 
-int vidc_rel_session_bufs(struct vidc_inst *inst)
+static int vidc_rel_session_bufs(struct vidc_inst *inst)
 {
 	struct device *dev = inst->core->dev;
 	struct hfi_device *hfi = &inst->core->hfi;
@@ -128,6 +128,29 @@ int vidc_rel_session_bufs(struct vidc_inst *inst)
 							bai);
 		if (ret) {
 			dev_err(dev, "%s: session release buffers failed\n",
+				__func__);
+			break;
+		}
+	}
+	mutex_unlock(&inst->registeredbufs.lock);
+
+	return ret;
+}
+
+static int vidc_set_session_bufs(struct vidc_inst *inst)
+{
+	struct device *dev = inst->core->dev;
+	struct hfi_device *hfi = &inst->core->hfi;
+	struct hal_buffer_addr_info *bai;
+	struct buffer_info *bi, *tmp;
+	int ret = 0;
+
+	mutex_lock(&inst->registeredbufs.lock);
+	list_for_each_entry_safe(bi, tmp, &inst->registeredbufs.list, list) {
+		bai = &bi->bai;
+		ret = vidc_hfi_session_set_buffers(hfi, inst->hfi_inst, bai);
+		if (ret) {
+			dev_err(dev, "%s: session: set buffer failed\n",
 				__func__);
 			break;
 		}
@@ -252,13 +275,10 @@ int vidc_vb2_buf_init(struct vb2_buffer *vb)
 	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
 	struct vb2_queue *q = vb->vb2_queue;
 	struct vidc_inst *inst = vb2_get_drv_priv(q);
-	struct hfi_device *hfi = &inst->core->hfi;
-	struct device *dev = inst->core->dev;
 	struct vidc_buffer *buf = to_vidc_buffer(vbuf);
 	struct hal_buffer_addr_info *bai;
 	struct buffer_info *bi;
 	struct sg_table *sgt;
-	int ret;
 
 	bi = &buf->bi;
 	bai = &bi->bai;
@@ -276,14 +296,6 @@ int vidc_vb2_buf_init(struct vb2_buffer *vb)
 	bai->buffer_type = HAL_BUFFER_OUTPUT;
 	bai->num_buffers = 1;
 	bai->device_addr = sg_dma_address(sgt->sgl);
-
-	dev_dbg(dev, "%s: set session buffers\n", __func__);
-
-	ret = vidc_hfi_session_set_buffers(hfi, inst->hfi_inst, bai);
-	if (ret) {
-		dev_err(dev, "%s: session: set buffer failed\n", __func__);
-		return ret;
-	}
 
 	mutex_lock(&inst->registeredbufs.lock);
 	list_add_tail(&bi->list, &inst->registeredbufs.list);
@@ -400,7 +412,7 @@ abort:
 	if (ret)
 		dev_err(dev, "stop streaming failed type: %d, ret: %d\n",
 			q->type, ret);
-#if 0
+#if 1
 	ret = pm_runtime_put_sync(dev);
 	if (ret < 0)
 		dev_err(dev, "%s: pm_runtime_put_sync (%d)\n", __func__, ret);
@@ -413,6 +425,10 @@ int vidc_vb2_start_streaming(struct vidc_inst *inst)
 	struct hfi_device *hfi = &inst->core->hfi;
 	struct vidc_buffer *buf, *n;
 	int ret;
+
+	ret = vidc_set_session_bufs(inst);
+	if (ret)
+		return ret;
 
 	ret = internal_bufs_alloc(inst);
 	if (ret)
