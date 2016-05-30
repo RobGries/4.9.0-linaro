@@ -1013,7 +1013,7 @@ static int vdec_start_streaming(struct vb2_queue *q, unsigned int count)
 		}
 	}
 
-	ret = vidc_start_streaming(inst);
+	ret = vidc_vb2_start_streaming(inst);
 	if (ret) {
 		dev_err(dev, "start streaming fail (%d)\n", ret);
 		return ret;

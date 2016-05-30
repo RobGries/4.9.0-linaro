@@ -18,9 +18,7 @@
 
 #include "common.h"
 
-int scratch_set_buffers(struct vidc_inst *);
-int persist_set_buffers(struct vidc_inst *);
-int persist_release_buffers(struct vidc_inst *);
-int scratch_release_buffers(struct vidc_inst *, bool);
+int internal_bufs_alloc(struct vidc_inst *inst);
+int internal_bufs_release(struct vidc_inst *inst);
 
 #endif /* _MSM_VIDC_INTERNAL_BUFFERS_H_ */

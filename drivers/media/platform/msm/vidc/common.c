@@ -378,17 +378,7 @@ void vidc_vb2_stop_streaming(struct vb2_queue *q)
 		goto abort;
 	}
 
-	ret = scratch_release_buffers(inst, false);
-	if (ret) {
-		dev_err(dev, "failed to release scratch buffers: %d\n", ret);
-		goto abort;
-	}
-
-	ret = persist_release_buffers(inst);
-	if (ret) {
-		dev_err(dev, "failed to release persist buffers: %d\n", ret);
-		goto abort;
-	}
+	ret = internal_bufs_release(inst);
 
 	if (hfi_inst->state == INST_INVALID || hfi->state == CORE_INVALID) {
 		ret = -EINVAL;
@@ -417,30 +407,16 @@ abort:
 #endif
 }
 
-int vidc_start_streaming(struct vidc_inst *inst)
+int vidc_vb2_start_streaming(struct vidc_inst *inst)
 {
 	struct device *dev = inst->core->dev;
 	struct hfi_device *hfi = &inst->core->hfi;
 	struct vidc_buffer *buf, *n;
 	int ret;
 
-	ret = vidc_get_bufreqs(inst);
-	if (ret) {
-		dev_err(dev, "buffers requirements (%d)\n", ret);
+	ret = internal_bufs_alloc(inst);
+	if (ret)
 		return ret;
-	}
-
-	ret = scratch_set_buffers(inst);
-	if (ret) {
-		dev_err(dev, "set scratch buffers (%d)\n", ret);
-		return ret;
-	}
-
-	ret = persist_set_buffers(inst);
-	if (ret) {
-		dev_err(dev, "set persist buffers (%d)\n", ret);
-		return ret;
-	}
 
 	vidc_scale_clocks(inst->core);
 

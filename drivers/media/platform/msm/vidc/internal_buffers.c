@@ -218,7 +218,7 @@ static int persist_set_buffer(struct vidc_inst *inst, enum hal_buffer_type type)
 	return internal_alloc_and_set(inst, bufreq, &inst->persistbufs);
 }
 
-int scratch_release_buffers(struct vidc_inst *inst, bool reuse)
+static int scratch_release_buffers(struct vidc_inst *inst, bool reuse)
 {
 	struct hfi_device *hfi = &inst->core->hfi;
 	struct smem *smem;
@@ -273,7 +273,7 @@ exit:
 	return ret;
 }
 
-int persist_release_buffers(struct vidc_inst *inst)
+static int persist_release_buffers(struct vidc_inst *inst)
 {
 	struct hfi_device *hfi = &inst->core->hfi;
 	struct smem *smem;
@@ -306,7 +306,7 @@ int persist_release_buffers(struct vidc_inst *inst)
 	return ret;
 }
 
-int scratch_set_buffers(struct vidc_inst *inst)
+static int scratch_set_buffers(struct vidc_inst *inst)
 {
 	struct device *dev = inst->core->dev;
 	int ret;
@@ -333,7 +333,7 @@ error:
 	return ret;
 }
 
-int persist_set_buffers(struct vidc_inst *inst)
+static int persist_set_buffers(struct vidc_inst *inst)
 {
 	int ret;
 
@@ -349,5 +349,47 @@ int persist_set_buffers(struct vidc_inst *inst)
 
 error:
 	persist_release_buffers(inst);
+	return ret;
+}
+
+int internal_bufs_alloc(struct vidc_inst *inst)
+{
+	struct device *dev = inst->core->dev;
+	int ret;
+
+	ret = vidc_get_bufreqs(inst);
+	if (ret) {
+		dev_err(dev, "buffers requirements (%d)\n", ret);
+		return ret;
+	}
+
+	ret = scratch_set_buffers(inst);
+	if (ret) {
+		dev_err(dev, "set scratch buffers (%d)\n", ret);
+		return ret;
+	}
+
+	ret = persist_set_buffers(inst);
+	if (ret) {
+		dev_err(dev, "set persist buffers (%d)\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+int internal_bufs_release(struct vidc_inst *inst)
+{
+	struct device *dev = inst->core->dev;
+	int ret;
+
+	ret = scratch_release_buffers(inst, false);
+	if (ret)
+		dev_err(dev, "failed to release scratch buffers: %d\n", ret);
+
+	ret = persist_release_buffers(inst);
+	if (ret)
+		dev_err(dev, "failed to release persist buffers: %d\n", ret);
+
 	return ret;
 }
