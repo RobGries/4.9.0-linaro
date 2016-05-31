@@ -40,6 +40,8 @@ static struct clock_info clks_8916[] = {
 	{ .name = "bus_clk", },
 };
 
+static const u32 max_load_8916 = 352800; /* 720p@30 + 1080p@30 */
+
 static int get_clock_table(struct device *dev, struct vidc_resources *res)
 {
 	struct clock_set *clocks = &res->clock_set;
@@ -140,6 +142,8 @@ int get_platform_resources(struct vidc_core *core)
 	res->reg_set.reg_tbl = reg_preset_8916;
 	res->reg_set.count = ARRAY_SIZE(reg_preset_8916);
 
+	res->max_load = max_load_8916;
+
 	ret = of_property_read_string(np, "qcom,hfi", &hfi_name);
 	if (ret) {
 		dev_err(dev, "reading hfi type failed\n");
@@ -161,12 +165,6 @@ int get_platform_resources(struct vidc_core *core)
 	ret = get_clock_table(dev, res);
 	if (ret) {
 		dev_err(dev, "load clock table failed (%d)\n", ret);
-		return ret;
-	}
-
-	ret = of_property_read_u32(np, "qcom,max-hw-load", &res->max_load);
-	if (ret) {
-		dev_err(dev, "determine max load supported failed (%d)\n", ret);
 		return ret;
 	}
 
