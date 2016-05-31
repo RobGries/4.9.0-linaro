@@ -881,11 +881,11 @@ static void hfi_session_etb_done(struct hfi_device *hfi,
 	inst->error = to_hal_error(pkt->error_type);
 
 	if (inst->error == HAL_ERR_NOT_SUPPORTED)
-		flags |= V4L2_QCOM_BUF_INPUT_UNSUPPORTED;
+		flags |= HAL_ERR_NOT_SUPPORTED;
 	if (inst->error == HAL_ERR_BITSTREAM_ERR)
-		flags |= V4L2_QCOM_BUF_DATA_CORRUPT;
+		flags |= HAL_ERR_BITSTREAM_ERR;
 	if (inst->error == HAL_ERR_START_CODE_NOT_FOUND)
-		flags |= V4L2_MSM_VIDC_BUF_START_CODE_NOT_FOUND;
+		flags |= HAL_ERR_START_CODE_NOT_FOUND;
 
 	inst->ops->empty_buf_done(inst, pkt->input_tag, pkt->filled_len,
 				  pkt->offset, flags);
@@ -972,7 +972,6 @@ static void hfi_session_ftb_done(struct hfi_device *hfi,
 
 	switch (fbd.picture_type) {
 	case HAL_PICTURE_IDR:
-		flags |= V4L2_QCOM_BUF_FLAG_IDRFRAME;
 		flags |= V4L2_BUF_FLAG_KEYFRAME;
 		break;
 	case HAL_PICTURE_I:

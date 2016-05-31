@@ -423,17 +423,30 @@ static int vdec_s_fmt(struct file *file, void *fh, struct v4l2_format *f)
 	return 0;
 }
 
-static int vdec_g_crop(struct file *file, void *fh, struct v4l2_crop *a)
+static int
+vdec_g_selection(struct file *file, void *priv, struct v4l2_selection *s)
 {
 	struct vidc_inst *inst = to_inst(file);
 
-	if (a->type != V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
+	if (s->type != V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
 		return -EINVAL;
 
-	a->c.top = 0;
-	a->c.left = 0;
-	a->c.width = inst->out_width;
-	a->c.height = inst->out_height;
+	switch (s->target) {
+	case V4L2_SEL_TGT_CROP_DEFAULT:
+	case V4L2_SEL_TGT_CROP_BOUNDS:
+	case V4L2_SEL_TGT_CROP:
+	case V4L2_SEL_TGT_COMPOSE_DEFAULT:
+	case V4L2_SEL_TGT_COMPOSE_BOUNDS:
+	case V4L2_SEL_TGT_COMPOSE:
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	s->r.top = 0;
+	s->r.left = 0;
+	s->r.width = inst->out_width;
+	s->r.height = inst->out_height;
 
 	return 0;
 }
@@ -510,8 +523,8 @@ static int vdec_querybuf(struct file *file, void *fh, struct v4l2_buffer *b)
 	return 0;
 }
 
-static int vdec_create_bufs(struct file *file, void *fh,
-			    struct v4l2_create_buffers *b)
+static int
+vdec_create_bufs(struct file *file, void *fh, struct v4l2_create_buffers *b)
 {
 	struct vidc_inst *inst = to_inst(file);
 	struct vb2_queue *queue = vidc_to_vb2q(inst, b->format.type);
@@ -728,7 +741,7 @@ static const struct v4l2_ioctl_ops vdec_ioctl_ops = {
 	.vidioc_g_fmt_vid_out_mplane = vdec_g_fmt,
 	.vidioc_try_fmt_vid_cap_mplane = vdec_try_fmt,
 	.vidioc_try_fmt_vid_out_mplane = vdec_try_fmt,
-	.vidioc_g_crop = vdec_g_crop,
+	.vidioc_g_selection = vdec_g_selection,
 	.vidioc_reqbufs = vdec_reqbufs,
 	.vidioc_querybuf = vdec_querybuf,
 	.vidioc_create_bufs = vdec_create_bufs,
@@ -957,11 +970,11 @@ static int vdec_start_streaming(struct vb2_queue *q, unsigned int count)
 	inst->in_reconfig = false;
 	inst->sequence = 0;
 
-	ret = vdec_set_properties(inst);
+	ret = vdec_init_session(inst);
 	if (ret)
 		return ret;
 
-	ret = vdec_init_session(inst);
+	ret = vdec_set_properties(inst);
 	if (ret)
 		return ret;
 
@@ -1046,13 +1059,13 @@ static int vdec_empty_buf_done(struct hfi_device_inst *hfi_inst, u32 addr,
 	vb = &vbuf->vb2_buf;
 	vbuf->flags = flags;
 
-	if (flags & V4L2_QCOM_BUF_INPUT_UNSUPPORTED)
+	if (flags & HAL_ERR_NOT_SUPPORTED)
 		dev_dbg(dev, "unsupported input stream\n");
 
-	if (flags & V4L2_QCOM_BUF_DATA_CORRUPT)
+	if (flags & HAL_ERR_BITSTREAM_ERR)
 		dev_dbg(dev, "corrupted input stream\n");
 
-	if (flags & V4L2_MSM_VIDC_BUF_START_CODE_NOT_FOUND)
+	if (flags & HAL_ERR_START_CODE_NOT_FOUND)
 		dev_dbg(dev, "start code not found\n");
 
 	vb2_buffer_done(vb, VB2_BUF_STATE_DONE);
@@ -1081,7 +1094,7 @@ static int vdec_fill_buf_done(struct hfi_device_inst *hfi_inst, u32 addr,
 	vb->planes[0].data_offset = data_offset;
 	vbuf->flags = flags;
 	vbuf->timestamp = *timestamp;
-	vbuf->sequence = ++inst->sequence;
+	vbuf->sequence = inst->sequence++;
 
 	vb2_buffer_done(vb, VB2_BUF_STATE_DONE);
 

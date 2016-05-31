@@ -376,7 +376,7 @@ enum v4l2_mpeg_vidc_video_perf_mode {
 		(V4L2_CID_MPEG_MSM_VIDC_BASE + 70)
 #define V4L2_CID_MPEG_VIDC_VIDEO_HYBRID_HIERP_MODE	\
 		(V4L2_CID_MPEG_MSM_VIDC_BASE + 72)
-
+#if 0
 /* Vendor extensions */
 #define V4L2_QCOM_BUF_FLAG_CODECCONFIG		0x10000
 #define V4L2_QCOM_BUF_FLAG_EOSEQ		0x20000
@@ -393,7 +393,7 @@ enum v4l2_mpeg_vidc_video_perf_mode {
 #define V4L2_MSM_VIDC_BUF_START_CODE_NOT_FOUND	0x10000000
 #define V4L2_MSM_BUF_FLAG_YUV_601_709_CLAMP	0x20000000
 #define V4L2_MSM_BUF_FLAG_MBAFF			0x40000000
-
+#endif
 /* Capabilities */
 #define V4L2_CAP_QCOM_FRAMESKIP	0x2000	/*  frame skipping is supported */
 

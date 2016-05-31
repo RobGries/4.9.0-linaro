@@ -1291,15 +1291,15 @@ static int venc_start_streaming(struct vb2_queue *q, unsigned int count)
 
 	inst->sequence = 0;
 
+	ret = venc_init_session(inst);
+	if (ret)
+		return ret;
+
 	ret = venc_set_properties(inst);
 	if (ret) {
 		dev_err(dev, "set properties (%d)\n", ret);
 		return ret;
 	}
-
-	ret = venc_init_session(inst);
-	if (ret)
-		return ret;
 
 	ret = venc_check_configuration(inst);
 	if (ret)
@@ -1366,13 +1366,13 @@ static int venc_empty_buf_done(struct hfi_device_inst *hfi_inst, u32 addr,
 	if (bytesused > vb->planes[0].length)
 		dev_dbg(dev, "bytesused overflow length\n");
 
-	if (flags & V4L2_QCOM_BUF_INPUT_UNSUPPORTED)
+	if (flags & HAL_ERR_NOT_SUPPORTED)
 		dev_dbg(dev, "unsupported input stream\n");
 
-	if (flags & V4L2_QCOM_BUF_DATA_CORRUPT)
+	if (flags & HAL_ERR_BITSTREAM_ERR)
 		dev_dbg(dev, "corrupted input stream\n");
 
-	if (flags & V4L2_MSM_VIDC_BUF_START_CODE_NOT_FOUND)
+	if (flags & HAL_ERR_START_CODE_NOT_FOUND)
 		dev_dbg(dev, "start code not found\n");
 
 	vb2_buffer_done(vb, VB2_BUF_STATE_DONE);
