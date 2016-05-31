@@ -1014,7 +1014,6 @@
 				 <&gcc GCC_VENUS0_AXI_CLK>;
 			clock-names = "core_clk", "iface_clk", "bus_clk";
 			qcom,hfi = "venus";
-			qcom,max-hw-load = <352800>; /* 720p @ 30 + 1080p @ 30 */
 			rproc = <&vidc_rproc>;
 			iommus = <&apps_iommu 5>;
 			status = "disabled";
