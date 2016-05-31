@@ -15,6 +15,7 @@
 #include <linux/mutex.h>
 #include <linux/list.h>
 #include <linux/completion.h>
+#include <linux/platform_device.h>
 #include <linux/videodev2.h>
 
 #include "hfi/venus/venus_hfi.h"

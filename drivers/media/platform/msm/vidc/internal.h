@@ -138,10 +138,6 @@ struct venc_controls {
 	u32 level;
 };
 
-#define VIDC_FMT_CAP	BIT(0)
-#define VIDC_FMT_OUT	BIT(1)
-#define IS_FMTS_SETTLED(f)	(f & VIDC_FMT_CAP && f & VIDC_FMT_OUT)
-
 struct vidc_inst {
 	struct list_head list;
 	struct mutex lock;
@@ -183,7 +179,6 @@ struct vidc_inst {
 	struct v4l2_fract timeperframe;
 	const struct vidc_format *fmt_out;
 	const struct vidc_format *fmt_cap;
-	u8 fmts_settled;
 	unsigned int num_input_bufs;
 	unsigned int num_output_bufs;
 

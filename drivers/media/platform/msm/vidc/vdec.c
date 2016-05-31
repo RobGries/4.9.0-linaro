@@ -849,7 +849,6 @@ static int vdec_queue_setup(struct vb2_queue *q, const void *parg,
 		}
 
 		inst->num_input_bufs = *num_buffers;
-		inst->fmts_settled |= VIDC_FMT_OUT;
 
 		dev_dbg(dev, "%s: type:%d, num_bufs:%u, size:%u\n", __func__,
 			q->type, *num_buffers, sizes[0]);
@@ -885,7 +884,6 @@ static int vdec_queue_setup(struct vb2_queue *q, const void *parg,
 				ret);
 #endif
 		inst->num_output_bufs = *num_buffers;
-		inst->fmts_settled |= VIDC_FMT_CAP;
 
 		dev_dbg(dev, "%s: type:%d, num_bufs:%u, size:%u\n", __func__,
 			q->type, *num_buffers, sizes[0]);

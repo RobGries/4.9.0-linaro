@@ -14,8 +14,8 @@
 #ifndef __MSM_VIDC_RESOURCES_H__
 #define __MSM_VIDC_RESOURCES_H__
 
-#include <linux/clk.h>
-#include <linux/platform_device.h>
+struct vidc_core;
+struct clk;
 
 struct load_freq_table {
 	u32 load;
@@ -30,21 +30,6 @@ struct reg_value_pair {
 struct reg_set {
 	const struct reg_value_pair *reg_tbl;
 	int count;
-};
-
-struct addr_range {
-	u32 start;
-	u32 size;
-};
-
-struct context_bank_info {
-	struct list_head list;
-	const char *name;
-	u32 buffer_type;
-	bool is_secure;
-	struct addr_range addr_range;
-	struct device *dev;
-	struct dma_iommu_mapping *mapping;
 };
 
 struct clock_info {
@@ -69,8 +54,6 @@ struct vidc_resources {
 	struct clock_set clock_set;
 	const char *hfi_version;
 };
-
-struct vidc_core;
 
 int get_platform_resources(struct vidc_core *);
 void put_platform_resources(struct vidc_core *);

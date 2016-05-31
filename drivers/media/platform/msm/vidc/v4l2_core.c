@@ -178,13 +178,7 @@ static int vidc_open(struct file *file)
 	int ret = 0;
 
 	dev_dbg(dev, "%s: enter\n", __func__);
-#if 0
-	ret = pm_runtime_get_sync(dev);
-	if (ret < 0) {
-		dev_err(dev, "%s: pm_runtime_get_sync (%d)\n", __func__, ret);
-		return ret;
-	}
-#endif
+
 	inst = kzalloc(sizeof(*inst), GFP_KERNEL);
 	if (!inst)
 		return -ENOMEM;
@@ -249,7 +243,6 @@ static int vidc_close(struct file *file)
 	struct vidc_inst *inst = to_inst(file);
 	struct vidc_core *core = inst->core;
 	struct device *dev = core->dev;
-	int ret;
 
 	dev_dbg(dev, "%s: enter\n", __func__);
 
@@ -259,11 +252,6 @@ static int vidc_close(struct file *file)
 		venc_close(inst);
 
 	vidc_del_inst(core, inst);
-#if 0
-	ret = pm_runtime_put_sync(dev);
-	if (ret)
-		dev_err(dev, "%s: pm_runtime_put_sync (%d)\n", __func__, ret);
-#endif
 	smem_delete_client(inst->mem_client);
 
 	mutex_destroy(&inst->bufqueue_lock);
