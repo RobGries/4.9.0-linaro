@@ -51,11 +51,11 @@ static u32 get_load(struct vidc_core *core, enum session_type type)
 
 static int scale_clocks_load(struct vidc_core *core, u32 mbs_per_sec)
 {
-	struct clock_info *ci = &core->res.clock_set.clock_tbl[0];
-	const struct load_freq_table *table = ci->load_freq_tbl;
+	const struct freq_tbl *table = core->res.freq_tbl;
+	int num_rows = core->res.freq_tbl_size;
+	struct clk *clk = core->res.clks[0].clk;
 	struct device *dev = core->dev;
 	unsigned long freq = table[0].freq;
-	int num_rows = ci->count;
 	int ret, i;
 
 	if (!mbs_per_sec && num_rows > 1) {
@@ -71,7 +71,7 @@ static int scale_clocks_load(struct vidc_core *core, u32 mbs_per_sec)
 
 set_freq:
 
-	ret = clk_set_rate(ci->clk, freq);
+	ret = clk_set_rate(clk, freq);
 	if (ret) {
 		dev_err(dev, "failed to set clock rate %lu (%d)\n", freq, ret);
 		return ret;

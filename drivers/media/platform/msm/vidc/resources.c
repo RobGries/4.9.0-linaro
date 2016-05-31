@@ -11,49 +11,42 @@
  *
  */
 
-#include <linux/iommu.h>
-#include <linux/qcom_iommu.h>
+#include <linux/clk.h>
 #include <linux/of.h>
 #include <linux/slab.h>
 
 #include "internal.h"
 #include "resources.h"
 
-static const struct load_freq_table freq_table_8916[] = {
+static const struct freq_tbl freq_table_8916[] = {
 	{ 352800, 228570000 },	/* 1920x1088 @ 30 + 1280x720 @ 30 */
 	{ 244800, 160000000 },	/* 1920x1088 @ 30 */
 	{ 108000, 100000000 },	/* 1280x720 @ 30 */
 };
 
-static const struct reg_value_pair reg_preset_8916[] = {
+static const struct reg_val reg_preset_8916[] = {
 	{ 0xe0020, 0x05555556 },
 	{ 0xe0024, 0x05555556 },
 	{ 0x80124, 0x00000003 },
 };
 
 static struct clock_info clks_8916[] = {
-	{ .name = "core_clk",
-	  .count = ARRAY_SIZE(freq_table_8916),
-	  .load_freq_tbl = freq_table_8916,
-	},
+	{ .name = "core_clk", },
 	{ .name = "iface_clk", },
 	{ .name = "bus_clk", },
 };
 
 static const u32 max_load_8916 = 352800; /* 720p@30 + 1080p@30 */
 
-static int get_clock_table(struct device *dev, struct vidc_resources *res)
+static int get_clks(struct device *dev, struct vidc_resources *res)
 {
-	struct clock_set *clocks = &res->clock_set;
+	struct clock_info *clks = res->clks;
 	unsigned int i;
 
-	clocks->clock_tbl = clks_8916;
-	clocks->count = ARRAY_SIZE(clks_8916);
-
-	for (i = 0; i < clocks->count; i++) {
-		clks_8916[i].clk = devm_clk_get(dev, clks_8916[i].name);
-		if (IS_ERR(clks_8916[i].clk))
-			return PTR_ERR(clks_8916[i].clk);
+	for (i = 0; i < res->clks_num; i++) {
+		clks[i].clk = devm_clk_get(dev, clks[i].name);
+		if (IS_ERR(clks[i].clk))
+			return PTR_ERR(clks[i].clk);
 	}
 
 	return 0;
@@ -61,12 +54,12 @@ static int get_clock_table(struct device *dev, struct vidc_resources *res)
 
 int enable_clocks(struct vidc_resources *res)
 {
-	struct clock_set *clks = &res->clock_set;
-	struct clock_info *tbl = clks->clock_tbl;
-	int ret, i;
+	struct clock_info *clks = res->clks;
+	unsigned int i;
+	int ret;
 
-	for (i = 0; i < clks->count; i++) {
-		ret = clk_prepare_enable(tbl[i].clk);
+	for (i = 0; i < res->clks_num; i++) {
+		ret = clk_prepare_enable(clks[i].clk);
 		if (ret)
 			goto err;
 	}
@@ -74,59 +67,19 @@ int enable_clocks(struct vidc_resources *res)
 	return 0;
 err:
 	while (--i)
-		clk_disable_unprepare(tbl[i].clk);
+		clk_disable_unprepare(clks[i].clk);
 
 	return ret;
 }
 
 void disable_clocks(struct vidc_resources *res)
 {
-	struct clock_set *clks = &res->clock_set;
-	struct clock_info *tbl = clks->clock_tbl;
-	int i;
+	struct clock_info *clks = res->clks;
+	unsigned int i;
 
-	for (i = clks->count - 1; i >= 0; i--)
-		clk_disable_unprepare(tbl[i].clk);
+	for (i = 0; i < res->clks_num; i++)
+		clk_disable_unprepare(clks[i].clk);
 }
-
-struct iommu_context {
-	const char *name;
-	u32 partition_buf_type;
-	u32 virt_addr_pool_start;
-	u32 virt_addr_pool_size;
-	bool is_secure;
-};
-
-static const struct iommu_context iommu_ctxs[] = {
-	{ .name			= "venus_ns",
-	  .partition_buf_type	= 0xfff,
-	  /* non-secure addr pool from 1500 MB to 3548 MB */
-	  .virt_addr_pool_start	= 0x5dc00000,
-	  .virt_addr_pool_size	= 0x80000000,
-	  .is_secure		= false,
-	},
-	{ .name			= "venus_sec_bitstream",
-	  .partition_buf_type	= 0x241,
-	  /* secure bitstream addr pool from 1200 MB to 1500 MB */
-	  .virt_addr_pool_start	= 0x4b000000,
-	  .virt_addr_pool_size	= 0x12c00000,
-	  .is_secure		= true,
-	},
-	{ .name			= "venus_sec_pixel",
-	  .partition_buf_type	= 0x106,
-	  /* secure pixel addr pool from 600 MB to 1200 MB */
-	  .virt_addr_pool_start	= 0x25800000,
-	  .virt_addr_pool_size	= 0x25800000,
-	  .is_secure		= true,
-	},
-	{ .name			= "venus_sec_non_pixel",
-	  .partition_buf_type	= 0x480,
-	  /* secure non-pixel addr pool from 16 MB to 584 MB */
-	  .virt_addr_pool_start	= 0x01000000,
-	  .virt_addr_pool_size	= 0x24800000,
-	  .is_secure		= true,
-	}
-};
 
 int get_platform_resources(struct vidc_core *core)
 {
@@ -136,12 +89,12 @@ int get_platform_resources(struct vidc_core *core)
 	const char *hfi_name = NULL, *propname;
 	int ret;
 
-	res->load_freq_tbl = freq_table_8916;
-	res->load_freq_tbl_size = ARRAY_SIZE(freq_table_8916);
-
-	res->reg_set.reg_tbl = reg_preset_8916;
-	res->reg_set.count = ARRAY_SIZE(reg_preset_8916);
-
+	res->freq_tbl = freq_table_8916;
+	res->freq_tbl_size = ARRAY_SIZE(freq_table_8916);
+	res->reg_tbl = reg_preset_8916;
+	res->reg_tbl_size = ARRAY_SIZE(reg_preset_8916);
+	res->clks = clks_8916;
+	res->clks_num = ARRAY_SIZE(clks_8916);
 	res->max_load = max_load_8916;
 
 	ret = of_property_read_string(np, "qcom,hfi", &hfi_name);
@@ -162,7 +115,7 @@ int get_platform_resources(struct vidc_core *core)
 	if (ret)
 		dev_dbg(dev, "legacy HFI packetization\n");
 
-	ret = get_clock_table(dev, res);
+	ret = get_clks(dev, res);
 	if (ret) {
 		dev_err(dev, "load clock table failed (%d)\n", ret);
 		return ret;

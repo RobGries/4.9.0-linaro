@@ -17,42 +17,32 @@
 struct vidc_core;
 struct clk;
 
-struct load_freq_table {
-	u32 load;
+struct freq_tbl {
+	unsigned int load;
 	unsigned long freq;
 };
 
-struct reg_value_pair {
+struct reg_val {
 	u32 reg;
 	u32 value;
-};
-
-struct reg_set {
-	const struct reg_value_pair *reg_tbl;
-	int count;
 };
 
 struct clock_info {
 	const char *name;
 	struct clk *clk;
-	const struct load_freq_table *load_freq_tbl;
-	u32 count; /* == has_scaling iff count != 0 */
-};
-
-struct clock_set {
-	struct clock_info *clock_tbl;
-	u32 count;
 };
 
 struct vidc_resources {
 	void __iomem *base;
 	unsigned int irq;
-	const struct load_freq_table *load_freq_tbl;
-	u32 load_freq_tbl_size;
-	struct reg_set reg_set;
-	u32 max_load;
-	struct clock_set clock_set;
+	const struct freq_tbl *freq_tbl;
+	unsigned int freq_tbl_size;
+	const struct reg_val *reg_tbl;
+	unsigned int reg_tbl_size;
+	struct clock_info *clks;
+	unsigned int clks_num;
 	const char *hfi_version;
+	u32 max_load;
 };
 
 int get_platform_resources(struct vidc_core *);

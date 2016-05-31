@@ -365,11 +365,11 @@ static u32 venus_readl(struct venus_hfi_device *hdev, u32 reg)
 
 static void venus_set_registers(struct venus_hfi_device *hdev)
 {
-	struct reg_set *regs = &hdev->res->reg_set;
-	const struct reg_value_pair *tbl = regs->reg_tbl;
+	const struct reg_val *tbl = hdev->res->reg_tbl;
+	unsigned int count = hdev->res->reg_tbl_size;
 	int i;
 
-	for (i = 0; i < regs->count; i++)
+	for (i = 0; i < count; i++)
 		venus_writel(hdev, tbl[i].reg, tbl[i].value);
 }
 
