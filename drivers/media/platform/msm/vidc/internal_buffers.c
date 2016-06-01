@@ -379,7 +379,7 @@ int internal_bufs_alloc(struct vidc_inst *inst)
 	return 0;
 }
 
-int internal_bufs_release(struct vidc_inst *inst)
+int internal_bufs_free(struct vidc_inst *inst)
 {
 	struct device *dev = inst->core->dev;
 	int ret;

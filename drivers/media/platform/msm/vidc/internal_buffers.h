@@ -18,6 +18,6 @@
 struct vidc_inst;
 
 int internal_bufs_alloc(struct vidc_inst *inst);
-int internal_bufs_release(struct vidc_inst *inst);
+int internal_bufs_free(struct vidc_inst *inst);
 
 #endif

@@ -24,38 +24,6 @@
 #include "load.h"
 #include "internal_buffers.h"
 
-/* helper functions */
-#if 0
-static void __fill_flags(struct hal_frame_data *frame_data, __u32 vb_flags)
-{
-	u32 *flags = &frame_data->flags;
-
-	if (vb_flags & V4L2_QCOM_BUF_FLAG_EOS)
-		*flags = HAL_BUFFERFLAG_EOS;
-
-	if (vb_flags & V4L2_BUF_FLAG_LAST)
-		*flags = HAL_BUFFERFLAG_EOS;
-
-	if (vb_flags & V4L2_MSM_BUF_FLAG_YUV_601_709_CLAMP)
-		*flags |= HAL_BUFFERFLAG_YUV_601_709_CSC_CLAMP;
-
-	if (vb_flags & V4L2_QCOM_BUF_FLAG_CODECCONFIG)
-		*flags |= HAL_BUFFERFLAG_CODECCONFIG;
-
-	if (vb_flags & V4L2_QCOM_BUF_FLAG_DECODEONLY)
-		*flags |= HAL_BUFFERFLAG_DECODEONLY;
-
-	if (vb_flags & V4L2_QCOM_BUF_TS_DISCONTINUITY)
-		*flags |= HAL_BUFFERFLAG_TS_DISCONTINUITY;
-
-	if (vb_flags & V4L2_QCOM_BUF_TS_ERROR)
-		*flags |= HAL_BUFFERFLAG_TS_ERROR;
-
-	if (vb_flags & V4L2_QCOM_BUF_TIMESTAMP_INVALID)
-		frame_data->timestamp = LLONG_MAX;
-}
-#endif
-
 static int vidc_set_session_buf(struct vb2_buffer *vb)
 {
 	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
@@ -390,7 +358,7 @@ void vidc_vb2_stop_streaming(struct vb2_queue *q)
 		goto abort;
 	}
 
-	ret = internal_bufs_release(inst);
+	ret = internal_bufs_free(inst);
 
 	if (hfi_inst->state == INST_INVALID || hfi->state == CORE_INVALID) {
 		ret = -EINVAL;

@@ -58,11 +58,7 @@ static const struct vidc_format vdec_formats[] = {
 		.pixfmt = V4L2_PIX_FMT_NV12,
 		.num_planes = 1,
 		.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE,
-	}, /*{
-		.pixfmt = V4L2_PIX_FMT_NV21,
-		.num_planes = 1,
-		.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE,
-	}, */{
+	}, {
 		.pixfmt = V4L2_PIX_FMT_MPEG4,
 		.num_planes = 1,
 		.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE,
@@ -137,73 +133,6 @@ static const struct vidc_format *find_format_by_index(int index, u32 type)
 
 	return &fmt[i];
 }
-
-#if 0 /* TODO: will be used for create_bufs */
-static int vdec_set_buffer_size(struct vidc_inst *inst, u32 buffer_size,
-				enum hal_buffer_type buffer_type)
-{
-	struct hfi_device *hfi = &inst->core->hfi;
-	struct device *dev = inst->core->dev;
-	struct hal_buffer_size_actual actual;
-	int ret;
-
-	dev_dbg(dev, "set actual buffer_size: %d for buffer type %d to fw\n",
-		buffer_size, buffer_type);
-
-	actual.type = buffer_type;
-	actual.size = buffer_size;
-
-	ret = vidc_hfi_session_set_property(hfi, inst->hfi_inst,
-					    HAL_PARAM_BUFFER_SIZE_ACTUAL,
-					    &actual);
-	if (ret) {
-		dev_err(dev, "%s: failed to set actual buffer size %u\n",
-			__func__, buffer_size);
-		return ret;
-	}
-
-	return 0;
-}
-
-static int vdec_update_out_buf_size(struct vidc_inst *inst,
-				    struct v4l2_format *f, int nplanes)
-{
-	struct v4l2_plane_pix_format *fmt = f->fmt.pix_mp.plane_fmt;
-	struct hal_buffer_requirements *bufreq;
-	enum hal_buffer_type type = HAL_BUFFER_OUTPUT;
-	int ret, i;
-
-	/*
-	 * Compare set buffer size and update to firmware if it's bigger
-	 * then firmware returned buffer size.
-	 */
-	for (i = 0; i < nplanes; ++i) {
-		bufreq = vidc_get_buff_req_buffer(inst, type);
-		if (!bufreq)
-			return -EINVAL;
-
-		if (fmt[i].sizeimage > bufreq->size) {
-			ret = vdec_set_buffer_size(inst, fmt[i].sizeimage,
-						   type);
-			if (ret)
-				return ret;
-		}
-	}
-
-	/* Query buffer requirements from firmware */
-	ret = vidc_get_bufreqs(inst);
-	if (ret)
-		return ret;
-
-	/* Read back updated firmware size */
-	for (i = 0; i < nplanes; ++i) {
-		bufreq = vidc_get_buff_req_buffer(inst, type);
-		fmt[i].sizeimage = bufreq ? bufreq->size : 0;
-	}
-
-	return 0;
-}
-#endif
 
 static int vdec_set_properties(struct vidc_inst *inst)
 {
