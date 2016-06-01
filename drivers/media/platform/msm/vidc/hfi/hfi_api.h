@@ -1,4 +1,6 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+ * Copyright 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -11,8 +13,8 @@
  *
  */
 
-#ifndef __VIDC_HFI_API_H__
-#define __VIDC_HFI_API_H__
+#ifndef __HFI_API_H__
+#define __HFI_API_H__
 
 #include <linux/interrupt.h>
 
@@ -1474,4 +1476,4 @@ int vidc_hfi_session_etb(struct hfi_device *hfi, struct hfi_device_inst *inst,
 int vidc_hfi_session_ftb(struct hfi_device *hfi, struct hfi_device_inst *inst,
 			 struct hal_frame_data *fdata);
 
-#endif /*__VIDC_HFI_API_H__ */
+#endif

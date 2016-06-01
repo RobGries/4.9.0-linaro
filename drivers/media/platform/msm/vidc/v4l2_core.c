@@ -1,4 +1,6 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+ * Copyright 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,7 +12,6 @@
  * GNU General Public License for more details.
  *
  */
-
 #include <linux/init.h>
 #include <linux/ioctl.h>
 #include <linux/list.h>
@@ -18,22 +19,17 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/types.h>
-#include <linux/version.h>
 #include <linux/remoteproc.h>
 #include <linux/pm_runtime.h>
+#include <media/videobuf2-v4l2.h>
 #include <media/v4l2-ioctl.h>
-#include <media/v4l2-event.h>
-#include <media/v4l2-ctrls.h>
 
-#include "common.h"
-#include "smem.h"
 #include "vdec.h"
 #include "venc.h"
 #include "internal.h"
 #include "resources.h"
 
 #define VIDC_CORES_MAX		2
-#define VIDC_AUTOSUSPEND_DELAY	200
 
 static struct vidc_drv *vidc_driver;
 
@@ -591,15 +587,9 @@ static int vidc_runtime_resume(struct device *dev)
 	return ret;
 }
 
-static int vidc_runtime_idle(struct device *dev)
-{
-	return 0;
-}
-
 static const struct dev_pm_ops vidc_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(vidc_pm_suspend, vidc_pm_resume)
-	SET_RUNTIME_PM_OPS(vidc_runtime_suspend, vidc_runtime_resume,
-			   vidc_runtime_idle)
+	SET_RUNTIME_PM_OPS(vidc_runtime_suspend, vidc_runtime_resume, NULL)
 };
 
 static struct platform_driver qcom_vidc_driver = {
@@ -615,5 +605,5 @@ static struct platform_driver qcom_vidc_driver = {
 module_platform_driver(qcom_vidc_driver);
 
 MODULE_ALIAS("platform:qcom-vidc");
-MODULE_DESCRIPTION("Qualcomm video decoder driver");
+MODULE_DESCRIPTION("Qualcomm video encoder and decoder driver");
 MODULE_LICENSE("GPL v2");

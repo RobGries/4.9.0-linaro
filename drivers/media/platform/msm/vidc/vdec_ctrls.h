@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2015, The Linux Foundation. All rights reserved.
- * Copyright (C) 2015 Linaro Ltd.
+ * Copyright 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -12,10 +12,10 @@
  * GNU General Public License for more details.
  *
  */
-#ifndef _MSM_VDEC_CTRLS_H_
-#define _MSM_VDEC_CTRLS_H_
+#ifndef __VIDC_VDEC_CTRLS_H__
+#define __VIDC_VDEC_CTRLS_H__
 
 int vdec_ctrl_init(struct vidc_inst *inst);
 void vdec_ctrl_deinit(struct vidc_inst *inst);
 
-#endif /* _MSM_VDEC_CTRLS_H_ */
+#endif

@@ -1,4 +1,6 @@
-/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+ * Copyright 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,10 +12,12 @@
  * GNU General Public License for more details.
  *
  */
-#ifndef _MSM_VDEC_H_
-#define _MSM_VDEC_H_
+#ifndef __VIDC_VDEC_H__
+#define __VIDC_VDEC_H__
 
-#include "internal.h"
+struct vidc_core;
+struct video_device;
+struct vidc_inst;
 
 int vdec_init(struct vidc_core *core, struct video_device *dec);
 void vdec_deinit(struct vidc_core *core, struct video_device *dec);

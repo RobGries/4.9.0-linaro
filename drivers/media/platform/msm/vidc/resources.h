@@ -1,4 +1,6 @@
-/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+ * Copyright 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,9 +12,8 @@
  * GNU General Public License for more details.
  *
  */
-
-#ifndef __MSM_VIDC_RESOURCES_H__
-#define __MSM_VIDC_RESOURCES_H__
+#ifndef __VIDC_RESOURCES_H__
+#define __VIDC_RESOURCES_H__
 
 struct vidc_core;
 struct clk;

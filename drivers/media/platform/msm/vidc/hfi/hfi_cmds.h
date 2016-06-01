@@ -1,4 +1,6 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+ * Copyright 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,8 +12,8 @@
  * GNU General Public License for more details.
  *
  */
-#ifndef __HFI_PACKETIZATION__
-#define __HFI_PACKETIZATION__
+#ifndef __HFI_CMDS_H__
+#define __HFI_CMDS_H__
 
 #include "hfi_helper.h"
 #include "hfi.h"

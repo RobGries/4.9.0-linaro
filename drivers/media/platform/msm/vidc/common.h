@@ -1,4 +1,6 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+ * Copyright 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,14 +12,13 @@
  * GNU General Public License for more details.
  *
  */
-
-#ifndef _MSM_VIDC_COMMON_H_
-#define _MSM_VIDC_COMMON_H_
+#ifndef __VIDC_COMMON_H__
+#define __VIDC_COMMON_H__
 
 #include <linux/kernel.h>
 #include <linux/list.h>
-#include <media/videobuf2-v4l2.h>
 #include <media/msm-v4l2-controls.h>
+#include <media/videobuf2-v4l2.h>
 
 #include "internal.h"
 

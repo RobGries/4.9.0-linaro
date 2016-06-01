@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- * Copyright (C) 2015 Linaro Ltd.
+ * Copyright 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -12,13 +12,12 @@
  * GNU General Public License for more details.
  *
  */
+#ifndef __VIDC_INTERNAL_BUFFERS_H__
+#define __VIDC_INTERNAL_BUFFERS_H__
 
-#ifndef _MSM_VIDC_INTERNAL_BUFFERS_H_
-#define _MSM_VIDC_INTERNAL_BUFFERS_H_
-
-#include "common.h"
+struct vidc_inst;
 
 int internal_bufs_alloc(struct vidc_inst *inst);
 int internal_bufs_release(struct vidc_inst *inst);
 
-#endif /* _MSM_VIDC_INTERNAL_BUFFERS_H_ */
+#endif

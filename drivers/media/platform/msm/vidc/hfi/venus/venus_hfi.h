@@ -12,7 +12,6 @@
  * GNU General Public License for more details.
  *
  */
-
 #ifndef __VENUS_HFI_H__
 #define __VENUS_HFI_H__
 

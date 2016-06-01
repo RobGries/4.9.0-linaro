@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- * Copyright (C) 2015 Linaro Ltd.
+ * Copyright (C) 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,8 +13,9 @@
  *
  */
 
-#include "smem.h"
+#include "common.h"
 #include "internal_buffers.h"
+#include "smem.h"
 
 struct vidc_internal_buf {
 	struct list_head list;
