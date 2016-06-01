@@ -22,7 +22,6 @@
 #include "venus_hfi.h"
 #include "venus_hfi_io.h"
 #include "smem.h"
-#include "media_info.h"
 #include "hfi/hfi_cmds.h"
 
 #define HFI_MASK_QHDR_TX_TYPE		0xff000000
@@ -1463,15 +1462,6 @@ static int venus_hfi_session_get_property(struct hfi_device_inst *inst,
 	return venus_iface_cmdq_write(hdev, &pkt);
 }
 
-static void venus_hfi_get_stride_scanline(int color_fmt, int width, int height,
-					  int *stride, int *scanlines)
-{
-	if (stride)
-		*stride = VENUS_Y_STRIDE(color_fmt, width);
-	if (scanlines)
-		*scanlines = VENUS_Y_SCANLINES(color_fmt, height);
-}
-
 static int venus_hfi_get_core_capabilities(void)
 {
 	return HAL_VIDEO_ENCODER_ROTATION_CAPABILITY |
@@ -1613,7 +1603,6 @@ static const struct hfi_ops venus_hfi_ops = {
 	.session_set_property		= venus_hfi_session_set_property,
 	.session_get_property		= venus_hfi_session_get_property,
 
-	.get_stride_scanline		= venus_hfi_get_stride_scanline,
 	.get_core_capabilities		= venus_hfi_get_core_capabilities,
 	.resume				= venus_hfi_resume,
 	.suspend			= venus_hfi_suspend,

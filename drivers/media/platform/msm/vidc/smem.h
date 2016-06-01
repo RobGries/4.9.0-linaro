@@ -20,11 +20,6 @@
 #include <linux/dma-attrs.h>
 #include <linux/scatterlist.h>
 
-enum smem_prop {
-	SMEM_CACHED = BIT(0),
-	SMEM_SECURE = BIT(1),
-};
-
 enum smem_cache_ops {
 	SMEM_CACHE_CLEAN,
 	SMEM_CACHE_INVALIDATE,

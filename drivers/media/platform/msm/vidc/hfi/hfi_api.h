@@ -1409,8 +1409,6 @@ struct hfi_ops {
 	int (*session_get_property)(struct hfi_device_inst *inst,
 				    enum hal_property ptype);
 
-	void (*get_stride_scanline)(int color_fmt, int width, int height,
-				    int *stride, int *scanlines);
 	int (*get_core_capabilities)(void);
 	int (*resume)(struct hfi_device *hfi);
 	int (*suspend)(struct hfi_device *hfi);
