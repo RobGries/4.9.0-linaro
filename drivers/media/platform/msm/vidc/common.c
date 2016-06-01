@@ -216,7 +216,7 @@ int vidc_bufrequirements(struct vidc_inst *inst, enum hal_buffer_type type,
 }
 
 struct vb2_v4l2_buffer *
-vidc_get_vb2buffer(struct vidc_inst *inst, dma_addr_t addr)
+vidc_find_vb2_buf(struct vidc_inst *inst, dma_addr_t addr)
 {
 	struct vidc_buffer *buf;
 	struct vb2_v4l2_buffer *vb = NULL;

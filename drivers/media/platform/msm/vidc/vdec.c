@@ -979,7 +979,7 @@ static int vdec_empty_buf_done(struct hfi_device_inst *hfi_inst, u32 addr,
 	struct vb2_v4l2_buffer *vbuf;
 	struct vb2_buffer *vb;
 
-	vbuf = vidc_get_vb2buffer(inst, addr);
+	vbuf = vidc_find_vb2_buf(inst, addr);
 	if (!vbuf)
 		return -EINVAL;
 
@@ -1012,7 +1012,7 @@ static int vdec_fill_buf_done(struct hfi_device_inst *hfi_inst, u32 addr,
 	struct vb2_v4l2_buffer *vbuf;
 	struct vb2_buffer *vb;
 
-	vbuf = vidc_get_vb2buffer(inst, addr);
+	vbuf = vidc_find_vb2_buf(inst, addr);
 	if (!vbuf)
 		return -EINVAL;
 
