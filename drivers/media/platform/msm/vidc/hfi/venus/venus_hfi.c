@@ -1,4 +1,6 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+ * Copyright 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,13 +12,12 @@
  * GNU General Public License for more details.
  *
  */
-//#define DEBUG
-#include <linux/kernel.h>
+
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/iopoll.h>
+#include <linux/kernel.h>
 #include <linux/slab.h>
-#include <linux/workqueue.h>
 #include <linux/qcom_scm.h>
 
 #include "venus_hfi.h"
@@ -140,8 +141,6 @@ static bool venus_fw_low_power_mode = true;
 static int venus_hw_rsp_timeout = 1000;
 static bool venus_fw_coverage = 0;
 
-static int venus_hfi_resume(struct hfi_device *hfi);
-static int venus_power_on(struct venus_hfi_device *hdev);
 static void venus_flush_debug_queue(struct venus_hfi_device *hdev, void *pkt);
 
 static DECLARE_COMPLETION(release_resources_done);
@@ -404,11 +403,7 @@ static int venus_iface_cmdq_write_nolock(struct venus_hfi_device *hdev,
 		dev_err(dev, "write to iface cmd queue failed (%d)\n", ret);
 		return ret;
 	}
-#if 0
-	ret = venus_power_on(hdev);
-	if (ret)
-		return ret;
-#endif
+
 	if (rx_req)
 		venus_soft_int(hdev);
 
@@ -535,9 +530,6 @@ static int venus_run(struct venus_hfi_device *hdev)
 	venus_writel(hdev, VIDC_CPU_CS_SCIACMDARG1, 0x01);
 	if (hdev->sfr.da)
 		venus_writel(hdev, VIDC_SFR_ADDR, hdev->sfr.da);
-
-//	venus_writel(hdev, VIDC_WRAPPER_CLOCK_CONFIG, 0);
-//	venus_writel(hdev, VIDC_WRAPPER_CPU_CLOCK_CONFIG, 0);
 
 	ret = venus_reset_core(hdev);
 	if (ret) {

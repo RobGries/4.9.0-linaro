@@ -1,4 +1,6 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+ * Copyright 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -11,8 +13,8 @@
  *
  */
 
-#ifndef __H_VENUS_HFI_H__
-#define __H_VENUS_HFI_H__
+#ifndef __VENUS_HFI_H__
+#define __VENUS_HFI_H__
 
 struct hfi_device;
 struct vidc_resources;

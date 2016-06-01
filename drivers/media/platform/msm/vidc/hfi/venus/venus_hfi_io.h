@@ -1,4 +1,6 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+ * Copyright 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -11,8 +13,8 @@
  *
  */
 
-#ifndef __VIDC_HFI_IO_H__
-#define __VIDC_HFI_IO_H__
+#ifndef __VENUS_HFI_IO_H__
+#define __VENUS_HFI_IO_H__
 
 #define VENUS_VCODEC_SS_CLOCK_HALT	0x0000000c
 #define VENUS_VPP_CORE_SW_RESET		0x00042004
