@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- * Copyright (C) 2015 Linaro Ltd.
+ * Copyright 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -16,15 +16,16 @@
 #ifndef __VIDC_MSM_SMEM_H__
 #define __VIDC_MSM_SMEM_H__
 
-#include <linux/device.h>
 #include <linux/dma-attrs.h>
-#include <linux/scatterlist.h>
 
 enum smem_cache_ops {
 	SMEM_CACHE_CLEAN,
 	SMEM_CACHE_INVALIDATE,
 	SMEM_CACHE_CLEAN_INVALIDATE,
 };
+
+struct device;
+struct sg_table;
 
 struct smem {
 	size_t size;

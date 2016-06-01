@@ -1,4 +1,6 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+ * Copyright 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -11,15 +13,15 @@
  *
  */
 
+#include <linux/device.h>
 #include <linux/dma-attrs.h>
 #include <linux/dma-direction.h>
-#include <linux/iommu.h>
-#include <linux/qcom_iommu.h>
+#include <linux/dma-mapping.h>
+#include <linux/err.h>
+#include <linux/scatterlist.h>
 #include <linux/slab.h>
-#include <linux/types.h>
 
 #include "smem.h"
-#include "resources.h"
 
 static int alloc_dma_mem(struct device *dev, size_t size, u32 align,
 			 u32 flags, struct smem *mem, int map_kernel)
@@ -49,10 +51,8 @@ static int alloc_dma_mem(struct device *dev, size_t size, u32 align,
 
 	mem->kvaddr = dma_alloc_attrs(mem->iommu_dev, size, &mem->da,
 				      GFP_KERNEL, &mem->attrs);
-	if (!mem->kvaddr) {
-		dev_err(dev, "cannot allocate dma memory\n");
+	if (!mem->kvaddr)
 		return -ENOMEM;
-	}
 
 	mem->sgt = kmalloc(sizeof(*mem->sgt), GFP_KERNEL);
 	if (!mem->sgt) {
