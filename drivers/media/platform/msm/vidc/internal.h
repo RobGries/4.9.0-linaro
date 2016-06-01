@@ -152,7 +152,6 @@ struct vidc_inst {
 
 	int streamoff;
 	struct buffer_requirements buff_req;
-	struct smem_client *mem_client;
 	struct vb2_queue bufq_out;
 	struct vb2_queue bufq_cap;
 	void *vb2_ctx_cap;

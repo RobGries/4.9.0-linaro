@@ -125,7 +125,6 @@ struct venus_hfi_device {
 	struct mem_desc ifaceq_table;
 	struct mem_desc sfr;
 	struct iface_queue queues[IFACEQ_NUM];
-	struct smem_client *mem_client;
 	struct vidc_resources *res;
 	struct device *dev;
 	enum venus_state state;
@@ -329,11 +328,11 @@ static int venus_alloc(struct venus_hfi_device *hdev, struct mem_desc *vmem,
 	struct smem *mem;
 	int ret;
 
-	mem = smem_alloc(hdev->mem_client, size, align, flags, 1);
+	mem = smem_alloc(hdev->dev, size, align, flags, 1);
 	if (IS_ERR(mem))
 		return PTR_ERR(mem);
 
-	ret = smem_cache_operations(hdev->mem_client, mem, SMEM_CACHE_CLEAN);
+	ret = smem_cache_operations(mem, SMEM_CACHE_CLEAN);
 	if (ret) {
 		dev_warn(dev, "failed to clean cache\n");
 		dev_warn(dev, "this may result in undefined behavior\n");
@@ -347,9 +346,9 @@ static int venus_alloc(struct venus_hfi_device *hdev, struct mem_desc *vmem,
 	return 0;
 }
 
-static void venus_free(struct venus_hfi_device *hdev, struct smem *mem)
+static void venus_free(struct smem *mem)
 {
-	smem_free(hdev->mem_client, mem);
+	smem_free(mem);
 }
 
 static void venus_writel(struct venus_hfi_device *hdev, u32 reg, u32 value)
@@ -739,16 +738,12 @@ static void venus_interface_queues_release(struct venus_hfi_device *hdev)
 {
 	mutex_lock(&hdev->lock);
 
-	venus_free(hdev, hdev->ifaceq_table.smem);
-	venus_free(hdev, hdev->sfr.smem);
+	venus_free(hdev->ifaceq_table.smem);
+	venus_free(hdev->sfr.smem);
 
 	memset(hdev->queues, 0, sizeof(hdev->queues));
 	memset(&hdev->ifaceq_table, 0, sizeof(hdev->ifaceq_table));
 	memset(&hdev->sfr, 0, sizeof(hdev->sfr));
-
-	smem_delete_client(hdev->mem_client);
-
-	hdev->mem_client = NULL;
 
 	mutex_unlock(&hdev->lock);
 }
@@ -1643,22 +1638,14 @@ int venus_hfi_create(struct hfi_device *hfi, struct vidc_resources *res)
 	hfi->priv = hdev;
 	hfi->ops = &venus_hfi_ops;
 
-	hdev->mem_client = smem_new_client(hfi->dev);
-	if (IS_ERR(hdev->mem_client)) {
-		ret = PTR_ERR(hdev->mem_client);
-		goto err_kfree;
-	}
-
 	ret = venus_interface_queues_init(hdev);
 	if (ret) {
 		dev_err(hfi->dev, "failed to init queues (%d)\n", ret);
-		goto err_delete_client;
+		goto err_kfree;
 	}
 
 	return 0;
 
-err_delete_client:
-	smem_delete_client(hdev->mem_client);
 err_kfree:
 	kfree(hdev);
 	hfi->priv = NULL;

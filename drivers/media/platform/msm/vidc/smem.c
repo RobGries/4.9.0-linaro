@@ -21,10 +21,9 @@
 #include "smem.h"
 #include "resources.h"
 
-static int alloc_dma_mem(struct smem_client *client, size_t size, u32 align,
+static int alloc_dma_mem(struct device *dev, size_t size, u32 align,
 			 u32 flags, struct smem *mem, int map_kernel)
 {
-	struct device *dev = client->dev;
 	int ret;
 
 	if (align > 1) {
@@ -75,7 +74,7 @@ error_sgt:
 	return ret;
 }
 
-static void free_dma_mem(struct smem_client *client, struct smem *mem)
+static void free_dma_mem(struct smem *mem)
 {
 	dma_free_attrs(mem->iommu_dev, mem->size, mem->kvaddr,
 		       mem->da, &mem->attrs);
@@ -101,50 +100,28 @@ static int sync_dma_cache(struct smem *mem, enum smem_cache_ops cache_op)
 	return 0;
 }
 
-int smem_cache_operations(struct smem_client *client, struct smem *mem,
-			  enum smem_cache_ops cache_op)
+int smem_cache_operations(struct smem *mem, enum smem_cache_ops cache_op)
 {
-	if (!client)
+	if (!mem)
 		return -EINVAL;
 
 	return sync_dma_cache(mem, cache_op);
 }
 
-struct smem_client *smem_new_client(struct device *dev)
-{
-	struct smem_client *client;
-
-	client = kzalloc(sizeof(*client), GFP_KERNEL);
-	if (!client)
-		return ERR_PTR(-ENOMEM);
-
-	client->dev = dev;
-
-	return client;
-}
-
-void smem_delete_client(struct smem_client *client)
-{
-	if (!client)
-		return;
-
-	kfree(client);
-}
-
-struct smem *smem_alloc(struct smem_client *client, size_t size, u32 align,
+struct smem *smem_alloc(struct device *dev, size_t size, u32 align,
 			u32 flags, int map_kernel)
 {
 	struct smem *mem;
 	int ret;
 
-	if (!client || !size)
+	if (!size)
 		return ERR_PTR(-EINVAL);
 
 	mem = kzalloc(sizeof(*mem), GFP_KERNEL);
 	if (!mem)
 		return ERR_PTR(-ENOMEM);
 
-	ret = alloc_dma_mem(client, size, align, flags, mem, map_kernel);
+	ret = alloc_dma_mem(dev, size, align, flags, mem, map_kernel);
 	if (ret) {
 		kfree(mem);
 		return ERR_PTR(ret);
@@ -153,11 +130,11 @@ struct smem *smem_alloc(struct smem_client *client, size_t size, u32 align,
 	return mem;
 }
 
-void smem_free(struct smem_client *client, struct smem *mem)
+void smem_free(struct smem *mem)
 {
-	if (!client || !mem)
+	if (!mem)
 		return;
 
-	free_dma_mem(client, mem);
+	free_dma_mem(mem);
 	kfree(mem);
 };

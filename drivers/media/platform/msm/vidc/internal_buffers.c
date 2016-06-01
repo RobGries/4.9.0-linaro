@@ -71,7 +71,7 @@ static int internal_set_buf_on_fw(struct vidc_inst *inst,
 	struct hal_buffer_addr_info bai = {0};
 	int ret;
 
-	ret = smem_cache_operations(inst->mem_client, mem, SMEM_CACHE_CLEAN);
+	ret = smem_cache_operations(mem, SMEM_CACHE_CLEAN);
 	if (ret)
 		dev_warn(dev, "Failed to clean cache. May cause undefined behavior\n");
 
@@ -107,7 +107,7 @@ static int internal_alloc_and_set(struct vidc_inst *inst,
 
 	for (i = 0; i < bufreq->count_actual; i++) {
 
-		smem = smem_alloc(inst->mem_client, bufreq->size, 1, flags, 0);
+		smem = smem_alloc(inst->core->dev, bufreq->size, 1, flags, 0);
 		if (IS_ERR(smem)) {
 			ret = PTR_ERR(smem);
 			goto err_no_mem;
@@ -136,7 +136,7 @@ static int internal_alloc_and_set(struct vidc_inst *inst,
 fail_set_buffers:
 	kfree(buf);
 fail_kzalloc:
-	smem_free(inst->mem_client, smem);
+	smem_free(smem);
 err_no_mem:
 	return ret;
 }
@@ -263,7 +263,7 @@ static int scratch_release_buffers(struct vidc_inst *inst, bool reuse)
 
 		list_del(&buf->list);
 		mutex_unlock(&inst->scratchbufs.lock);
-		smem_free(inst->mem_client, buf->smem);
+		smem_free(buf->smem);
 		mutex_lock(&inst->scratchbufs.lock);
 		kfree(buf);
 	}
@@ -297,7 +297,7 @@ static int persist_release_buffers(struct vidc_inst *inst)
 
 		list_del(&buf->list);
 		mutex_unlock(&inst->persistbufs.lock);
-		smem_free(inst->mem_client, buf->smem);
+		smem_free(buf->smem);
 		mutex_lock(&inst->persistbufs.lock);
 		kfree(buf);
 	}

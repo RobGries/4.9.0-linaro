@@ -37,18 +37,10 @@ struct smem {
 	struct sg_table *sgt;
 };
 
-struct smem_client {
-	struct device *dev;
-};
-
-struct smem_client *smem_new_client(struct device *dev);
-void smem_delete_client(struct smem_client *clt);
-
-struct smem *smem_alloc(struct smem_client *clt, size_t size, u32 align,
+struct smem *smem_alloc(struct device *dev, size_t size, u32 align,
 			u32 flags, int map_kernel);
-void smem_free(struct smem_client *clt, struct smem *mem);
+void smem_free(struct smem *mem);
 
-int smem_cache_operations(struct smem_client *clt, struct smem *mem,
-			  enum smem_cache_ops);
+int smem_cache_operations(struct smem *mem, enum smem_cache_ops);
 
 #endif /* __VIDC_MSM_SMEM_H__ */

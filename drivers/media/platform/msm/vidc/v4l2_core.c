@@ -199,19 +199,13 @@ static int vidc_open(struct file *file)
 
 	inst->core = core;
 
-	inst->mem_client = smem_new_client(dev);
-	if (IS_ERR(inst->mem_client)) {
-		ret = PTR_ERR(inst->mem_client);
-		goto err_free_inst;
-	}
-
 	if (inst->session_type == VIDC_DECODER)
 		ret = vdec_open(inst);
 	else
 		ret = venc_open(inst);
 
 	if (ret)
-		goto err_del_mem_clnt;
+		goto err_free_inst;
 
 	if (inst->session_type == VIDC_DECODER)
 		v4l2_fh_init(&inst->fh, &core->vdev_dec);
@@ -230,8 +224,6 @@ static int vidc_open(struct file *file)
 
 	return 0;
 
-err_del_mem_clnt:
-	smem_delete_client(inst->mem_client);
 err_free_inst:
 	kfree(inst);
 	dev_dbg(dev, "%s: exit (ret %d)\n", __func__, ret);
@@ -252,7 +244,6 @@ static int vidc_close(struct file *file)
 		venc_close(inst);
 
 	vidc_del_inst(core, inst);
-	smem_delete_client(inst->mem_client);
 
 	mutex_destroy(&inst->bufqueue_lock);
 	mutex_destroy(&inst->scratchbufs.lock);
