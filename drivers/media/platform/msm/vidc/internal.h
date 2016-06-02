@@ -60,11 +60,7 @@ struct vidc_core {
 };
 
 struct vdec_controls {
-	u32 nal_format;
-	u32 output_order;
 	u32 post_loop_deb_mode;
-	u32 sync_frame_decode;
-	u32 frame_assembly;
 	u32 profile;
 	u32 level;
 };
