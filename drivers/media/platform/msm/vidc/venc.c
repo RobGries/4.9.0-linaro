@@ -1,4 +1,6 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,6 +26,8 @@
 #include "internal_buffers.h"
 #include "load.h"
 #include "venc_ctrls.h"
+
+#define NUM_B_FRAMES_MAX	4
 
 /*
  * Default 601 to 709 conversion coefficients for resolution: 176x144 negative
@@ -530,7 +534,7 @@ static int venc_set_properties(struct vidc_inst *inst)
 	dev_dbg(dev, "IDR period (GOP size): %u\n", idrp.idr_period);
 
 	if (ctr->num_b_frames) {
-		u32 max_num_b_frames = 4;
+		u32 max_num_b_frames = NUM_B_FRAMES_MAX;
 
 		ptype = HAL_PARAM_VENC_MAX_NUM_B_FRAMES;
 		ret = vidc_hfi_session_set_property(hfi, inst->hfi_inst,
