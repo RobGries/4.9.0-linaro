@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- * Copyright (C) 2015 Linaro Ltd.
+ * Copyright (C) 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -147,11 +147,6 @@ int vdec_ctrl_init(struct vidc_inst *inst)
 	unsigned int i;
 	int ret;
 
-	inst->ctrls = kzalloc(sizeof(struct v4l2_ctrl *) * NUM_CTRLS,
-			      GFP_KERNEL);
-	if (!inst->ctrls)
-		return -ENOMEM;
-
 	ret = v4l2_ctrl_handler_init(&inst->ctrl_handler, NUM_CTRLS);
 	if (ret) {
 		dev_err(dev, "control handler init (%d)\n", ret);
@@ -220,8 +215,6 @@ int vdec_ctrl_init(struct vidc_inst *inst)
 				vdec_ctrls[i].name, ret);
 			return ret;
 		}
-
-		inst->ctrls[i] = ctrl;
 	}
 
 	return ret;
@@ -229,6 +222,5 @@ int vdec_ctrl_init(struct vidc_inst *inst)
 
 void vdec_ctrl_deinit(struct vidc_inst *inst)
 {
-	kfree(inst->ctrls);
 	v4l2_ctrl_handler_free(&inst->ctrl_handler);
 }

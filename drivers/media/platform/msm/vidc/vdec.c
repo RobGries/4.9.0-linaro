@@ -1,4 +1,6 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2016 Linaro Limited.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,7 +12,6 @@
  * GNU General Public License for more details.
  *
  */
-//#define DEBUG
 #include <linux/slab.h>
 #include <linux/pm_runtime.h>
 #include <media/v4l2-ioctl.h>
