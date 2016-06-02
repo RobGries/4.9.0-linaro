@@ -27,9 +27,7 @@
 #include "common.h"
 #include "load.h"
 
-#define MIN_NUM_OUTPUT_BUFFERS		4
-#define MAX_NUM_OUTPUT_BUFFERS		VIDEO_MAX_FRAME
-#define MACROBLOCKS_PER_PIXEL		(16 * 16)
+#define MACROBLOCKS_PER_PIXEL	(16 * 16)
 
 static u32 get_framesize_nv12(int plane, u32 height, u32 width)
 {
@@ -394,9 +392,13 @@ vdec_reqbufs(struct file *file, void *fh, struct v4l2_requestbuffers *b)
 	if (!b->count)
 		vb2_core_queue_release(queue);
 
+	dev_dbg(inst->core->dev, "reqbuf: before: cnt: %u, mem: %u, type: %u\n",
+		b->count, b->memory, b->type);
+
 	ret = vb2_reqbufs(queue, b);
 
-	dev_dbg(inst->core->dev, "reqbuf: cnt: %u, mem: %u, type: %u (%d)\n",
+	dev_dbg(inst->core->dev,
+		"reqbuf: after : cnt: %u, mem: %u, type: %u (%d)\n",
 		b->count, b->memory, b->type, ret);
 
 	return ret;
@@ -601,47 +603,64 @@ static int vdec_enum_framesizes(struct file *file, void *fh,
 				struct v4l2_frmsizeenum *fsize)
 {
 	struct vidc_inst *inst = to_inst(file);
-	struct vidc_core_capability *capability = &inst->capability;
+	struct vidc_core_capability *caps = &inst->capability;
+	const struct vidc_format *fmt;
 
 	fsize->type = V4L2_FRMSIZE_TYPE_STEPWISE;
 
-	if (!fsize->index) {
-		fsize->stepwise.min_width = capability->width.min;
-		fsize->stepwise.max_width = capability->width.max;
-		fsize->stepwise.step_width = capability->width.step_size;
-		fsize->stepwise.min_height = capability->height.min;
-		fsize->stepwise.max_height = capability->height.max;
-		fsize->stepwise.step_height = capability->height.step_size;
-		return 0;
-	}
+	fmt = find_format(fsize->pixel_format,
+			  V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
+	if (!fmt)
+		return -EINVAL;
 
-	return -EINVAL;
+	if (fsize->index)
+		return -EINVAL;
+
+	fsize->stepwise.min_width = caps->width.min;
+	fsize->stepwise.max_width = caps->width.max;
+	fsize->stepwise.step_width = caps->width.step_size;
+	fsize->stepwise.min_height = caps->height.min;
+	fsize->stepwise.max_height = caps->height.max;
+	fsize->stepwise.step_height = caps->height.step_size;
+
+	return 0;
 }
 
 static int vdec_enum_frameintervals(struct file *file, void *fh,
 				    struct v4l2_frmivalenum *fival)
 {
 	struct vidc_inst *inst = to_inst(file);
-	struct vidc_core_capability *capability = &inst->capability;
+	struct vidc_core_capability *caps = &inst->capability;
 	const struct vidc_format *fmt;
 
 	fival->type = V4L2_FRMIVAL_TYPE_STEPWISE;
 
-	fmt = find_format(fival->pixel_format, fival->type);
+	fmt = find_format(fival->pixel_format,
+			  V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
 	if (!fmt)
 		return -EINVAL;
 
 	if (fival->index)
 		return -EINVAL;
 
-	fival->stepwise.min.numerator = 1;
-	fival->stepwise.min.denominator = capability->frame_rate.min;
+	if (!fival->width || !fival->height)
+		return -EINVAL;
 
-	fival->stepwise.max.numerator = 30;
-	fival->stepwise.max.denominator = capability->frame_rate.max;
+	if (fival->width > caps->width.max || fival->width < caps->width.min)
+		return -EINVAL;
+
+	if (fival->height > caps->height.max ||
+	    fival->height < caps->height.min)
+		return -EINVAL;
+
+	fival->stepwise.min.numerator = 1;
+	fival->stepwise.min.denominator = caps->frame_rate.max;
+
+	fival->stepwise.max.numerator = 1;
+	fival->stepwise.max.denominator = caps->frame_rate.min;
 
 	fival->stepwise.step.numerator = 1;
-	fival->stepwise.step.denominator = capability->frame_rate.step_size;
+	fival->stepwise.step.denominator = 30;//caps->frame_rate.step_size;
 
 	return 0;
 }
@@ -698,8 +717,7 @@ static int vdec_init_session(struct vidc_inst *inst)
 	enum hal_property ptype;
 	int ret;
 
-//	if (inst->hfi_inst->state >= INST_OPEN)
-//		return 0;
+	dev_dbg(dev, "%s: enter\n", __func__);
 
 	ret = vidc_hfi_session_init(hfi, inst->hfi_inst, pixfmt, VIDC_DECODER);
 	if (ret) {
@@ -709,12 +727,6 @@ static int vdec_init_session(struct vidc_inst *inst)
 
 	/* TODO: avoid this copy */
 	inst->capability = inst->hfi_inst->capability;
-
-	dev_dbg(dev, "caps: width %u-%u (%u), height %u-%u (%u)\n",
-		inst->capability.width.min, inst->capability.width.max,
-		inst->capability.width.step_size,
-		inst->capability.height.min, inst->capability.height.max,
-		inst->capability.height.step_size);
 
 	ptype = HAL_PARAM_FRAME_SIZE;
 	fs.buffer_type = HAL_BUFFER_INPUT;
@@ -745,10 +757,41 @@ static int vdec_init_session(struct vidc_inst *inst)
 	if (ret)
 		goto err;
 
+	dev_dbg(dev, "%s: exit (0)\n", __func__);
 	return 0;
 err:
-	vidc_hfi_session_deinit(hfi, inst->hfi_inst);
+	dev_err(dev, "%s: exit (%d)\n", __func__, ret);
+//	vidc_hfi_session_deinit(hfi, inst->hfi_inst);
 	return ret;
+}
+
+static int vdec_cap_num_buffers(struct vidc_inst *inst,
+				struct hal_buffer_requirements *bufreq)
+{
+	struct hfi_device *hfi = &inst->core->hfi;
+	struct device *dev = inst->core->dev;
+	int ret, ret2;
+
+	ret = pm_runtime_get_sync(dev);
+	if (ret < 0) {
+		dev_err(dev, "%s: pm_runtime_get_sync (%d)\n", __func__, ret);
+		return ret;
+	}
+
+	ret = vdec_init_session(inst);
+	if (ret)
+		goto put_sync;
+
+	ret = vidc_bufrequirements(inst, HAL_BUFFER_OUTPUT, bufreq);
+
+	vidc_hfi_session_deinit(hfi, inst->hfi_inst);
+
+put_sync:
+	ret2 = pm_runtime_put_sync(dev);
+	if (ret2)
+		dev_err(dev, "%s: pm_runtime_put_sync (%d)\n", __func__, ret);
+
+	return ret ? ret : ret2;
 }
 
 static int vdec_queue_setup(struct vb2_queue *q, const void *parg,
@@ -785,20 +828,10 @@ static int vdec_queue_setup(struct vb2_queue *q, const void *parg,
 		break;
 	case V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE:
 		*num_planes = inst->fmt_cap->num_planes;
-#if 1
-		ret = pm_runtime_get_sync(dev);
-		if (ret < 0) {
-			dev_err(dev, "%s: pm_runtime_get_sync (%d)\n", __func__, ret);
-			return ret;
-		}
-#endif
-		ret = vdec_init_session(inst);
-		if (ret)
-			return ret;
 
-		ret = vidc_bufrequirements(inst, HAL_BUFFER_OUTPUT, &bufreq);
+		ret = vdec_cap_num_buffers(inst, &bufreq);
 		if (ret)
-			return ret;
+			break;
 
 		*num_buffers = max(*num_buffers, bufreq.count_min);
 
@@ -807,12 +840,7 @@ static int vdec_queue_setup(struct vb2_queue *q, const void *parg,
 							inst->width);
 			alloc_ctxs[p] = inst->vb2_ctx_cap;
 		}
-#if 1
-		ret = pm_runtime_put_sync(dev);
-		if (ret)
-			dev_err(dev, "%s: pm_runtime_put_sync (%d)\n", __func__,
-				ret);
-#endif
+
 		inst->num_output_bufs = *num_buffers;
 
 		dev_dbg(dev, "%s: type:%d, num_bufs:%u, size:%u\n", __func__,
@@ -1091,7 +1119,7 @@ static const struct hfi_inst_ops vdec_hfi_ops = {
 
 static void vdec_inst_init(struct vidc_inst *inst)
 {
-	inst->fmt_out = &vdec_formats[2];
+	inst->fmt_out = &vdec_formats[6];
 	inst->fmt_cap = &vdec_formats[0];
 	inst->width = 1280;
 	inst->height = ALIGN(720, 32);

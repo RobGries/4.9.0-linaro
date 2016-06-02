@@ -10,7 +10,6 @@
  * GNU General Public License for more details.
  *
  */
-
 #include <linux/slab.h>
 #include <linux/list.h>
 #include <linux/hash.h>
@@ -844,10 +843,19 @@ static void hfi_session_init_done(struct hfi_device *hfi,
 	cap->secure_output2_threshold = init_done->secure_output2_threshold;
 	cap->capability_set = true;
 
-	dev_dbg(hfi->dev, "width %u-%u, height %u-%d, framerate %u-%u\n",
-		cap->width.min, cap->width.max,
-		cap->height.min, cap->height.max,
-		cap->frame_rate.min, cap->frame_rate.max);
+	dev_dbg(hfi->dev,
+		"width %u-%u (%u), height %u-%d (%u), framerate %u-%u (%u)\n",
+		cap->width.min, cap->width.max, cap->width.step_size,
+		cap->height.min, cap->height.max, cap->height.step_size,
+		cap->frame_rate.min, cap->frame_rate.max,
+		cap->frame_rate.step_size);
+
+	dev_dbg(hfi->dev,
+		"scalex %u-%u (%u), scaley %u-%d (%u), mbsperframe %u-%u (%u)\n",
+		cap->scale_x.min, cap->scale_x.max, cap->scale_x.step_size,
+		cap->scale_y.min, cap->scale_y.max, cap->scale_y.step_size,
+		cap->mbs_per_frame.min, cap->mbs_per_frame.max,
+		cap->mbs_per_frame.step_size);
 
 done:
 	inst->error = error;

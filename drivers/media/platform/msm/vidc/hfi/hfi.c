@@ -10,7 +10,6 @@
  * GNU General Public License for more details.
  *
  */
-
 #include <linux/slab.h>
 #include <linux/mutex.h>
 #include <linux/list.h>
@@ -213,6 +212,8 @@ int vidc_hfi_session_init(struct hfi_device *hfi, struct hfi_device_inst *inst,
 	if (!hfi || !inst)
 		return -EINVAL;
 
+	dev_dbg(hfi->dev, "%s: enter\n", __func__);
+
 	stype = to_session_type(type);
 	codec = to_codec_type(pixfmt);
 
@@ -222,6 +223,11 @@ int vidc_hfi_session_init(struct hfi_device *hfi, struct hfi_device_inst *inst,
 	init_completion(&inst->done);
 
 	mutex_lock(&inst->lock);
+
+//	if (inst->state != INST_UNINIT) {
+//		ret = -EINVAL;
+//		goto unlock;
+//	}
 
 	ret = call_hfi_op(hfi, session_init, hfi, inst, stype, codec);
 	if (ret)
@@ -233,11 +239,20 @@ int vidc_hfi_session_init(struct hfi_device *hfi, struct hfi_device_inst *inst,
 		goto unlock;
 	}
 
+	if (inst->error != HAL_ERR_NONE) {
+		dev_err(hfi->dev, "%s: session init failed (%x)\n", __func__,
+			inst->error);
+		ret = -EINVAL;
+		goto unlock;
+	}
+
 	ret = 0;
 	inst->state = INST_OPEN;
 
 unlock:
 	mutex_unlock(&inst->lock);
+
+	dev_dbg(hfi->dev, "%s: exit (%d)\n", __func__, ret);
 
 	return ret;
 }
@@ -264,6 +279,8 @@ int vidc_hfi_session_deinit(struct hfi_device *hfi,
 {
 	int ret;
 
+	dev_dbg(hfi->dev, "%s: enter\n", __func__);
+
 	mutex_lock(&inst->lock);
 
 	if (inst->state == INST_CLOSE) {
@@ -288,11 +305,20 @@ int vidc_hfi_session_deinit(struct hfi_device *hfi,
 		goto unlock;
 	}
 
+	if (inst->error != HAL_ERR_NONE) {
+		dev_err(hfi->dev, "%s: session deinit failed (%x)\n", __func__,
+			inst->error);
+		ret = -EINVAL;
+		goto unlock;
+	}
+
 	ret = 0;
 	inst->state = INST_UNINIT;
 
 unlock:
 	mutex_unlock(&inst->lock);
+
+	dev_dbg(hfi->dev, "%s: exit (%d)\n", __func__, ret);
 
 	return ret;
 }
@@ -300,6 +326,8 @@ unlock:
 int vidc_hfi_session_start(struct hfi_device *hfi, struct hfi_device_inst *inst)
 {
 	int ret;
+
+	dev_dbg(hfi->dev, "%s: enter\n", __func__);
 
 	mutex_lock(&inst->lock);
 
@@ -326,12 +354,16 @@ int vidc_hfi_session_start(struct hfi_device *hfi, struct hfi_device_inst *inst)
 unlock:
 	mutex_unlock(&inst->lock);
 
+	dev_dbg(hfi->dev, "%s: exit (%d)\n", __func__, ret);
+
 	return ret;
 }
 
 int vidc_hfi_session_stop(struct hfi_device *hfi, struct hfi_device_inst *inst)
 {
 	int ret;
+
+	dev_dbg(hfi->dev, "%s: enter\n", __func__);
 
 	mutex_lock(&inst->lock);
 
@@ -357,6 +389,8 @@ int vidc_hfi_session_stop(struct hfi_device *hfi, struct hfi_device_inst *inst)
 	inst->state = INST_STOP;
 unlock:
 	mutex_unlock(&inst->lock);
+
+	dev_dbg(hfi->dev, "%s: exit (%d)\n", __func__, ret);
 
 	return ret;
 }
