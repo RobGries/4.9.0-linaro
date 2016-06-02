@@ -154,8 +154,6 @@ struct vidc_inst {
 	void *vb2_ctx_out;
 
 	struct v4l2_ctrl_handler ctrl_handler;
-	struct v4l2_ctrl **ctrls;
-	struct v4l2_ctrl **cluster;
 	union {
 		struct vdec_controls dec;
 		struct venc_controls enc;
