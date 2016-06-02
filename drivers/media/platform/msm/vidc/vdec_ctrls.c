@@ -63,10 +63,6 @@ static struct vidc_ctrl vdec_ctrls[] = {
 
 #define NUM_CTRLS	ARRAY_SIZE(vdec_ctrls)
 
-#define IS_PRIV_CTRL(idx)	( \
-		(V4L2_CTRL_ID2CLASS(idx) == V4L2_CTRL_CLASS_MPEG) && \
-		V4L2_CTRL_DRIVER_PRIV(idx))
-
 static int vdec_op_s_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct vidc_inst *inst = ctrl_to_inst(ctrl);
@@ -143,7 +139,6 @@ static const struct v4l2_ctrl_ops vdec_ctrl_ops = {
 int vdec_ctrl_init(struct vidc_inst *inst)
 {
 	struct device *dev = inst->core->dev;
-	struct v4l2_ctrl_config cfg;
 	unsigned int i;
 	int ret;
 
@@ -154,42 +149,23 @@ int vdec_ctrl_init(struct vidc_inst *inst)
 	}
 
 	for (i = 0; i < NUM_CTRLS; i++) {
-		struct v4l2_ctrl *ctrl = NULL;
+		struct v4l2_ctrl *ctrl;
 
-		if (IS_PRIV_CTRL(vdec_ctrls[i].id)) {
-			memset(&cfg, 0, sizeof(cfg));
-			cfg.def = vdec_ctrls[i].def;
-			cfg.flags = 0;
-			cfg.id = vdec_ctrls[i].id;
-			cfg.max = vdec_ctrls[i].max;
-			cfg.min = vdec_ctrls[i].min;
-			cfg.menu_skip_mask = vdec_ctrls[i].menu_skip_mask;
-			cfg.name = vdec_ctrls[i].name;
-			cfg.ops = &vdec_ctrl_ops;
-			cfg.step = vdec_ctrls[i].step;
-			cfg.type = vdec_ctrls[i].type;
-			cfg.qmenu = vdec_ctrls[i].qmenu;
-
-			ctrl = v4l2_ctrl_new_custom(&inst->ctrl_handler, &cfg,
-						    NULL);
-		} else {
-			if (vdec_ctrls[i].type == V4L2_CTRL_TYPE_MENU) {
-				ctrl = v4l2_ctrl_new_std_menu(
-					&inst->ctrl_handler,
+		if (vdec_ctrls[i].type == V4L2_CTRL_TYPE_MENU) {
+			ctrl = v4l2_ctrl_new_std_menu(&inst->ctrl_handler,
 					&vdec_ctrl_ops,
 					vdec_ctrls[i].id,
 					vdec_ctrls[i].max,
 					vdec_ctrls[i].menu_skip_mask,
 					vdec_ctrls[i].def);
-			} else {
-				ctrl = v4l2_ctrl_new_std(&inst->ctrl_handler,
+		} else {
+			ctrl = v4l2_ctrl_new_std(&inst->ctrl_handler,
 					&vdec_ctrl_ops,
 					vdec_ctrls[i].id,
 					vdec_ctrls[i].min,
 					vdec_ctrls[i].max,
 					vdec_ctrls[i].step,
 					vdec_ctrls[i].def);
-			}
 		}
 
 		if (!ctrl) {

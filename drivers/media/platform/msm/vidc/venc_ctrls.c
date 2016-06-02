@@ -27,10 +27,6 @@
 #define SLICE_MB_SIZE_MAX	300
 #define INTRA_REFRESH_MBS_MAX	300
 
-#define IS_PRIV_CTRL(id)	( \
-		(V4L2_CTRL_ID2CLASS(id) == V4L2_CTRL_CLASS_MPEG) && \
-		V4L2_CTRL_DRIVER_PRIV(id))
-
 static struct vidc_ctrl venc_ctrls[] = {
 	/* standard controls */
 	{
@@ -351,8 +347,7 @@ static const struct v4l2_ctrl_ops venc_ctrl_ops = {
 int venc_ctrl_init(struct vidc_inst *inst)
 {
 	struct device *dev = inst->core->dev;
-	struct v4l2_ctrl_config cfg;
-	unsigned int idx;
+	unsigned int i;
 	int ret;
 
 	ret = v4l2_ctrl_handler_init(&inst->ctrl_handler, NUM_CTRLS);
@@ -361,50 +356,29 @@ int venc_ctrl_init(struct vidc_inst *inst)
 		return ret;
 	}
 
-	for (idx = 0; idx < NUM_CTRLS; idx++) {
+	for (i = 0; i < NUM_CTRLS; i++) {
 		struct v4l2_ctrl *ctrl;
 
-		if (IS_PRIV_CTRL(venc_ctrls[idx].id)) {
-			memset(&cfg, 0, sizeof(cfg));
-			cfg.def = venc_ctrls[idx].def;
-			cfg.flags = 0;
-			cfg.id = venc_ctrls[idx].id;
-			cfg.max = venc_ctrls[idx].max;
-			cfg.min = venc_ctrls[idx].min;
-			cfg.menu_skip_mask = venc_ctrls[idx].menu_skip_mask;
-			cfg.name = venc_ctrls[idx].name;
-			cfg.ops = &venc_ctrl_ops;
-			cfg.step = venc_ctrls[idx].step;
-			cfg.type = venc_ctrls[idx].type;
-			cfg.qmenu = venc_ctrls[idx].qmenu;
-			ctrl = v4l2_ctrl_new_custom(&inst->ctrl_handler, &cfg,
-						    NULL);
+		if (venc_ctrls[i].type == V4L2_CTRL_TYPE_MENU) {
+			ctrl = v4l2_ctrl_new_std_menu(&inst->ctrl_handler,
+					&venc_ctrl_ops, venc_ctrls[i].id,
+					venc_ctrls[i].max,
+					venc_ctrls[i].menu_skip_mask,
+					venc_ctrls[i].def);
 		} else {
-			if (venc_ctrls[idx].type == V4L2_CTRL_TYPE_MENU) {
-				ctrl = v4l2_ctrl_new_std_menu(
-						&inst->ctrl_handler,
-						&venc_ctrl_ops,
-						venc_ctrls[idx].id,
-						venc_ctrls[idx].max,
-						venc_ctrls[idx].menu_skip_mask,
-						venc_ctrls[idx].def);
-			} else {
-				ctrl = v4l2_ctrl_new_std(
-						&inst->ctrl_handler,
-						&venc_ctrl_ops,
-						venc_ctrls[idx].id,
-						venc_ctrls[idx].min,
-						venc_ctrls[idx].max,
-						venc_ctrls[idx].step,
-						venc_ctrls[idx].def);
-			}
+			ctrl = v4l2_ctrl_new_std(&inst->ctrl_handler,
+					&venc_ctrl_ops, venc_ctrls[i].id,
+					venc_ctrls[i].min,
+					venc_ctrls[i].max,
+					venc_ctrls[i].step,
+					venc_ctrls[i].def);
 		}
 
 		ret = inst->ctrl_handler.error;
 		if (ret) {
 			v4l2_ctrl_handler_free(&inst->ctrl_handler);
 			dev_err(dev, "adding ctrl id %x (%s) ret (%d)\n",
-				venc_ctrls[idx].id, venc_ctrls[idx].name, ret);
+				venc_ctrls[i].id, venc_ctrls[i].name, ret);
 			return ret;
 		}
 	}
