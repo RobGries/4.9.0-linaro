@@ -431,7 +431,7 @@ static void hfi_copy_cap_prop(struct hfi_capability *in,
 
 static void
 session_get_prop_profile_level(struct hfi_msg_session_property_info_pkt *pkt,
-			       struct hfi_profile_level *profile_level)
+			       struct hal_profile_level *profile_level)
 {
 	struct hfi_profile_level *hfi;
 	u32 req_bytes;
@@ -535,11 +535,7 @@ static void hfi_session_prop_info(struct hfi_device *hfi,
 {
 	struct hfi_msg_session_property_info_pkt *pkt = packet;
 	struct device *dev = hfi->dev;
-	struct hfi_profile_level profile_level = {0};
-	struct buffer_requirements bufreq;
-	struct vidc_getprop_buf *getprop;
-	void *data;
-	size_t len;
+	union hal_get_property *hprop = &inst->hprop;
 
 	inst->error = HAL_ERR_NONE;
 
@@ -550,38 +546,18 @@ static void hfi_session_prop_info(struct hfi_device *hfi,
 
 	switch (pkt->data[0]) {
 	case HFI_PROPERTY_CONFIG_BUFFER_REQUIREMENTS:
-		memset(&bufreq, 0, sizeof(bufreq));
-		session_get_prop_buf_req(dev, pkt, &bufreq);
-		data = &bufreq;
-		len = sizeof(bufreq);
+		memset(&hprop->buf_req, 0, sizeof(hprop->buf_req));
+		session_get_prop_buf_req(dev, pkt, &hprop->buf_req);
 		break;
 	case HFI_PROPERTY_PARAM_PROFILE_LEVEL_CURRENT:
-		session_get_prop_profile_level(pkt, &profile_level);
-		data = &profile_level;
-		len = sizeof(profile_level);
+		memset(&hprop->profile_level, 0, sizeof(hprop->profile_level));
+		session_get_prop_profile_level(pkt, &hprop->profile_level);
 		break;
 	default:
 		dev_dbg(dev, "%s: unknown property id:%x\n", __func__,
 			pkt->data[0]);
 		return;
 	}
-
-	getprop = kzalloc(sizeof(*getprop), GFP_KERNEL);
-	if (!getprop) {
-		dev_err(dev, "%s: getprop kzalloc failed\n", __func__);
-		return;
-	}
-
-	getprop->data = kmemdup(data, len, GFP_KERNEL);
-	if (!getprop->data) {
-		dev_err(dev, "%s: kmemdup failed\n", __func__);
-		kfree(getprop);
-		return;
-	}
-
-	mutex_lock(&inst->prop_list_lock);
-	list_add_tail(&getprop->list, &inst->prop_list);
-	mutex_unlock(&inst->prop_list_lock);
 
 	complete(&inst->done);
 }

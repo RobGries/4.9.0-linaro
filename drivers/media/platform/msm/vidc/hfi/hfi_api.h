@@ -1261,11 +1261,6 @@ enum session_type {
 #define INST_RELEASE_RESOURCES		7
 #define INST_CLOSE			8
 
-struct vidc_getprop_buf {
-	struct list_head list;
-	void *data;
-};
-
 struct vidc_core_capability {
 	struct hal_capability width;
 	struct hal_capability height;
@@ -1322,8 +1317,9 @@ struct hfi_device_inst {
 	unsigned int state;
 	struct completion done;
 	unsigned int error;
-	struct list_head prop_list;
-	struct mutex prop_list_lock;
+
+	union hal_get_property hprop;
+
 	/* instance operations passed by outside world */
 	const struct hfi_inst_ops *ops;
 	void *ops_priv;

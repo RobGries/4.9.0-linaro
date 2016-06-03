@@ -188,8 +188,6 @@ struct hfi_device_inst *vidc_hfi_session_create(struct hfi_device *hfi,
 		return ERR_PTR(-ENOMEM);
 
 	mutex_init(&inst->lock);
-	mutex_init(&inst->prop_list_lock);
-	INIT_LIST_HEAD(&inst->prop_list);
 	INIT_LIST_HEAD(&inst->list);
 	inst->state = INST_UNINIT;
 	inst->ops = ops;
@@ -259,13 +257,10 @@ void vidc_hfi_session_destroy(struct hfi_device *hfi,
 	list_del(&inst->list);
 	mutex_unlock(&hfi->lock);
 
-	if (mutex_is_locked(&inst->lock) ||
-	    mutex_is_locked(&inst->prop_list_lock))
+	if (mutex_is_locked(&inst->lock))
 		WARN(1, "session destroy");
 
 	mutex_destroy(&inst->lock);
-	mutex_destroy(&inst->prop_list_lock);
-
 	kfree(inst);
 }
 
@@ -558,7 +553,6 @@ int vidc_hfi_session_get_property(struct hfi_device *hfi,
 				  enum hal_property ptype,
 				  union hal_get_property *hprop)
 {
-	struct vidc_getprop_buf *buf;
 	int ret;
 
 	if (!hfi || !inst)
@@ -576,7 +570,8 @@ int vidc_hfi_session_get_property(struct hfi_device *hfi,
 	case HAL_PARAM_GET_BUFFER_REQUIREMENTS:
 		break;
 	default:
-		return -ENOTSUPP;
+		ret = -ENOTSUPP;
+		goto unlock;
 	}
 
 	init_completion(&inst->done);
@@ -591,20 +586,8 @@ int vidc_hfi_session_get_property(struct hfi_device *hfi,
 		goto unlock;
 	}
 
-	mutex_lock(&inst->prop_list_lock);
-	if (!list_empty(&inst->prop_list)) {
-		buf = list_first_entry(&inst->prop_list,
-					struct vidc_getprop_buf, list);
-		*hprop = *((union hal_get_property *) buf->data);
-		kfree(buf->data);
-		list_del(&buf->list);
-		kfree(buf);
-		ret = 0;
-	} else {
-		/* getprop list is empty */
-		ret = -EINVAL;
-	}
-	mutex_unlock(&inst->prop_list_lock);
+	*hprop = inst->hprop;
+	ret = 0;
 unlock:
 	mutex_unlock(&inst->lock);
 
