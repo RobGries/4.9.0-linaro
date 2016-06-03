@@ -224,11 +224,6 @@ int vidc_hfi_session_init(struct hfi_device *hfi, struct hfi_device_inst *inst,
 
 	mutex_lock(&inst->lock);
 
-//	if (inst->state != INST_UNINIT) {
-//		ret = -EINVAL;
-//		goto unlock;
-//	}
-
 	ret = call_hfi_op(hfi, session_init, hfi, inst, stype, codec);
 	if (ret)
 		goto unlock;
