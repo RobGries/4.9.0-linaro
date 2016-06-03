@@ -610,8 +610,12 @@ static int vdec_enum_framesizes(struct file *file, void *fh,
 
 	fmt = find_format(fsize->pixel_format,
 			  V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
-	if (!fmt)
-		return -EINVAL;
+	if (!fmt) {
+		fmt = find_format(fsize->pixel_format,
+				  V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
+		if (!fmt)
+			return -EINVAL;
+	}
 
 	if (fsize->index)
 		return -EINVAL;
@@ -637,8 +641,12 @@ static int vdec_enum_frameintervals(struct file *file, void *fh,
 
 	fmt = find_format(fival->pixel_format,
 			  V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
-	if (!fmt)
-		return -EINVAL;
+	if (!fmt) {
+		fmt = find_format(fival->pixel_format,
+				  V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
+		if (!fmt)
+			return -EINVAL;
+	}
 
 	if (fival->index)
 		return -EINVAL;
@@ -703,7 +711,7 @@ static const struct v4l2_ioctl_ops vdec_ioctl_ops = {
 	.vidioc_s_parm = vdec_s_parm,
 	.vidioc_g_parm = vdec_g_parm,
 	.vidioc_enum_framesizes = vdec_enum_framesizes,
-	.vidioc_enum_frameintervals = vdec_enum_frameintervals,
+//	.vidioc_enum_frameintervals = vdec_enum_frameintervals,
 	.vidioc_subscribe_event = vdec_subscribe_event,
 	.vidioc_unsubscribe_event = v4l2_event_unsubscribe,
 };
@@ -760,8 +768,8 @@ static int vdec_init_session(struct vidc_inst *inst)
 	dev_dbg(dev, "%s: exit (0)\n", __func__);
 	return 0;
 err:
+	vidc_hfi_session_deinit(hfi, inst->hfi_inst);
 	dev_err(dev, "%s: exit (%d)\n", __func__, ret);
-//	vidc_hfi_session_deinit(hfi, inst->hfi_inst);
 	return ret;
 }
 
@@ -916,13 +924,13 @@ static int vdec_start_streaming(struct vb2_queue *q, unsigned int count)
 
 	if (!vb2_is_streaming(queue))
 		return 0;
-#if 1
+
 	ret = pm_runtime_get_sync(dev);
 	if (ret < 0) {
 		dev_err(dev, "%s: pm_runtime_get_sync (%d)\n", __func__, ret);
 		return ret;
 	}
-#endif
+
 	inst->in_reconfig = false;
 	inst->sequence = 0;
 

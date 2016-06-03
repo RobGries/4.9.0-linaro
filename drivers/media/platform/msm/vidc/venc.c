@@ -1110,9 +1110,6 @@ static int venc_init_session(struct vidc_inst *inst)
 	enum hal_property ptype = HAL_PARAM_FRAME_SIZE;
 	int ret;
 
-//	if (inst->hfi_inst->state >= INST_OPEN)
-//		return 0;
-
 	ret = vidc_hfi_session_init(hfi, inst->hfi_inst, pixfmt, VIDC_ENCODER);
 	if (ret) {
 		dev_err(dev, "%s: session init failed (%d)\n", __func__, ret);
@@ -1121,12 +1118,6 @@ static int venc_init_session(struct vidc_inst *inst)
 
 	/* TODO: avoid this copy */
 	inst->capability = inst->hfi_inst->capability;
-
-	dev_dbg(dev, "caps: width %u-%u (%u), height %u-%u (%u)\n",
-		inst->capability.width.min, inst->capability.width.max,
-		inst->capability.width.step_size,
-		inst->capability.height.min, inst->capability.height.max,
-		inst->capability.height.step_size);
 
 	fs.buffer_type = HAL_BUFFER_INPUT;
 	fs.width = inst->out_width;
@@ -1160,6 +1151,35 @@ err:
 	return ret;
 }
 
+static int venc_cap_num_buffers(struct vidc_inst *inst,
+				struct hal_buffer_requirements *bufreq)
+{
+	struct hfi_device *hfi = &inst->core->hfi;
+	struct device *dev = inst->core->dev;
+	int ret, ret2;
+
+	ret = pm_runtime_get_sync(dev);
+	if (ret < 0) {
+		dev_err(dev, "%s: pm_runtime_get_sync (%d)\n", __func__, ret);
+		return ret;
+	}
+
+	ret = venc_init_session(inst);
+	if (ret)
+		goto put_sync;
+
+	ret = vidc_bufrequirements(inst, HAL_BUFFER_OUTPUT, bufreq);
+
+	vidc_hfi_session_deinit(hfi, inst->hfi_inst);
+
+put_sync:
+	ret2 = pm_runtime_put_sync(dev);
+	if (ret2)
+		dev_err(dev, "%s: pm_runtime_put_sync (%d)\n", __func__, ret);
+
+	return ret ? ret : ret2;
+}
+
 static int venc_queue_setup(struct vb2_queue *q, const void *parg,
 			    unsigned int *num_buffers,
 			    unsigned int *num_planes, unsigned int sizes[],
@@ -1187,29 +1207,10 @@ static int venc_queue_setup(struct vb2_queue *q, const void *parg,
 		break;
 	case V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE:
 		*num_planes = inst->fmt_cap->num_planes;
-#if 1
-		ret = pm_runtime_get_sync(dev);
-		if (ret < 0) {
-			dev_err(dev, "%s: pm_runtime_get_sync (%d)\n", __func__,
-				ret);
-			return ret;
-		}
-#endif
 
-		ret = venc_init_session(inst);
+		ret = venc_cap_num_buffers(inst, &bufreq);
 		if (ret)
-			return ret;
-
-		ret = vidc_bufrequirements(inst, HAL_BUFFER_OUTPUT, &bufreq);
-		if (ret)
-			return ret;
-
-#if 1
-		ret = pm_runtime_put_sync(dev);
-		if (ret)
-			dev_err(dev, "%s: pm_runtime_put_sync (%d)\n", __func__,
-				ret);
-#endif
+			break;
 
 		*num_buffers = max(*num_buffers, bufreq.count_actual);
 		*num_buffers = clamp_val(*num_buffers, 4, VIDEO_MAX_FRAME);
