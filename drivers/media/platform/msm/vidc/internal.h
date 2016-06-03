@@ -147,6 +147,7 @@ struct vidc_inst {
 	struct mutex bufqueue_lock;
 
 	int streamoff;
+	int streamon;
 	struct buffer_requirements buff_req;
 	struct vb2_queue bufq_out;
 	struct vb2_queue bufq_cap;
