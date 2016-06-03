@@ -815,6 +815,10 @@ struct hfi_mvc_buffer_layout_descp_type {
 	u32 ngap;
 };
 
+struct hfi_scs_threshold {
+	u32 threshold_value;
+};
+
 #define HFI_CMD_SYS_COMMON_START	(HFI_DOMAIN_BASE_COMMON +	\
 					 HFI_ARCH_COMMON_OFFSET +	\
 					 HFI_CMD_START_OFFSET + 0x0000)

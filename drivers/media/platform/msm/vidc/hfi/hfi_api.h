@@ -1097,10 +1097,6 @@ struct hal_hybrid_hierp {
 	u32 layers;
 };
 
-struct hfi_scs_threshold {
-	u32 threshold_value;
-};
-
 struct buffer_requirements {
 	struct hal_buffer_requirements buffer[HAL_BUFFER_MAX];
 };
