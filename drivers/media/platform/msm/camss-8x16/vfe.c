@@ -15,14 +15,13 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-#include <asm/dma-iommu.h>
 #include <linux/clk.h>
 #include <linux/interrupt.h>
+#include <linux/iommu.h>
 #include <linux/msm-bus.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
-#include <linux/qcom_iommu.h>
 #include <linux/spinlock_types.h>
 #include <linux/spinlock.h>
 #include <media/media-entity.h>
@@ -1379,7 +1378,6 @@ int msm_vfe_subdev_init(struct vfe_device *vfe, struct camss *camss,
 						    struct platform_device,
 						    dev);
 	struct resource *r;
-	struct dma_iommu_mapping *mapping;
 	int i;
 	int ret;
 
@@ -1442,23 +1440,6 @@ int msm_vfe_subdev_init(struct vfe_device *vfe, struct camss *camss,
 		if (IS_ERR(vfe->clocks[i].clk))
 			return PTR_ERR(vfe->clocks[i].clk);
 	}
-
-	/* IOMMU */
-
-	vfe->camss->iommu_dev = msm_iommu_get_ctx("vfe");
-	if (IS_ERR(vfe->camss->iommu_dev)) {
-		dev_err(dev, "Cannot find iommu nonsecure ctx\n");
-		return PTR_ERR(vfe->camss->iommu_dev);
-	}
-
-	mapping = arm_iommu_create_mapping(&platform_bus_type,
-					   0x40000000, 0xC0000000, 0);
-	if (IS_ERR_OR_NULL(mapping))
-		return PTR_ERR(mapping) ?: -ENODEV;
-
-	ret = arm_iommu_attach_device(vfe->camss->iommu_dev, mapping);
-	if (ret)
-		return -1;
 
 	/* Interrupt */
 
