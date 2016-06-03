@@ -10,19 +10,14 @@
  * GNU General Public License for more details.
  *
  */
-//#define DEBUG
-#include <linux/jiffies.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
-#include <linux/completion.h>
 #include <linux/pm_runtime.h>
-#include <media/msm-v4l2-controls.h>
 #include <media/videobuf2-dma-sg.h>
 
-#include "smem.h"
 #include "common.h"
-#include "load.h"
 #include "internal_buffers.h"
+#include "load.h"
 
 static int vidc_set_session_buf(struct vb2_buffer *vb)
 {
@@ -340,15 +335,22 @@ void vidc_vb2_stop_streaming(struct vb2_queue *q)
 	if (streamoff)
 		return;
 
+	mutex_lock(&inst->lock);
+	if (inst->streamon == 0) {
+		mutex_unlock(&inst->lock);
+		return;
+	}
+	mutex_unlock(&inst->lock);
+
 	ret = vidc_hfi_session_stop(hfi, inst->hfi_inst);
 	if (ret) {
-		dev_err(dev, "session: stop failed\n");
+		dev_err(dev, "session: stop failed (%d)\n", ret);
 		goto abort;
 	}
 
 	ret = vidc_hfi_session_release_res(hfi, inst->hfi_inst);
 	if (ret) {
-		dev_err(dev, "session: release resources failed\n");
+		dev_err(dev, "session: release resources failed (%d)\n", ret);
 		goto abort;
 	}
 
@@ -424,120 +426,11 @@ int vidc_vb2_start_streaming(struct vidc_inst *inst)
 	}
 	mutex_unlock(&inst->bufqueue_lock);
 
-	return ret;
-}
-
-int vidc_session_flush(struct vidc_inst *inst, u32 flags)
-{
-	struct vidc_core *core = inst->core;
-	struct hfi_device_inst *hfi_inst = inst->hfi_inst;
-	struct device *dev = core->dev;
-	struct hfi_device *hfi = &core->hfi;
-	bool ip_flush = false;
-	bool op_flush = false;
-	int ret =  0;
-
-	ip_flush = flags & V4L2_QCOM_CMD_FLUSH_OUTPUT;
-	op_flush = flags & V4L2_QCOM_CMD_FLUSH_CAPTURE;
-
-	if (ip_flush && !op_flush) {
-		dev_err(dev, "Input only flush not supported\n");
-		return 0;
-	}
-
-	if (hfi_inst->state == INST_INVALID || hfi->state == CORE_INVALID) {
-		dev_err(dev, "Core %p and inst %p are in bad state\n",
-			core, inst);
-		return 0;
-	}
-
-	if (inst->in_reconfig && !ip_flush && op_flush) {
-		ret = call_hfi_op(hfi, session_flush, inst->hfi_inst,
-				  HAL_FLUSH_OUTPUT);
-	} else {
-		/*
-		 * If flush is called after queueing buffers but before
-		 * streamon driver should flush the pending queue
-		 */
-
-		/* Do not send flush in case of session_error */
-		if (!(hfi_inst->state == INST_INVALID &&
-		      hfi->state != CORE_INVALID))
-			ret = call_hfi_op(hfi, session_flush,
-					  inst->hfi_inst,
-					  HAL_FLUSH_ALL);
-	}
+	mutex_lock(&inst->lock);
+	inst->streamon = 1;
+	mutex_unlock(&inst->lock);
 
 	return ret;
-}
-
-enum hal_extradata_id vidc_extradata_index(enum v4l2_mpeg_vidc_extradata index)
-{
-	switch (index) {
-	case V4L2_MPEG_VIDC_EXTRADATA_NONE:
-		return HAL_EXTRADATA_NONE;
-	case V4L2_MPEG_VIDC_EXTRADATA_MB_QUANTIZATION:
-		return HAL_EXTRADATA_MB_QUANTIZATION;
-	case V4L2_MPEG_VIDC_EXTRADATA_INTERLACE_VIDEO:
-		return HAL_EXTRADATA_INTERLACE_VIDEO;
-	case V4L2_MPEG_VIDC_EXTRADATA_VC1_FRAMEDISP:
-		return HAL_EXTRADATA_VC1_FRAMEDISP;
-	case V4L2_MPEG_VIDC_EXTRADATA_VC1_SEQDISP:
-		return HAL_EXTRADATA_VC1_SEQDISP;
-	case V4L2_MPEG_VIDC_EXTRADATA_TIMESTAMP:
-		return HAL_EXTRADATA_TIMESTAMP;
-	case V4L2_MPEG_VIDC_EXTRADATA_S3D_FRAME_PACKING:
-		return HAL_EXTRADATA_S3D_FRAME_PACKING;
-	case V4L2_MPEG_VIDC_EXTRADATA_FRAME_RATE:
-		return HAL_EXTRADATA_FRAME_RATE;
-	case V4L2_MPEG_VIDC_EXTRADATA_PANSCAN_WINDOW:
-		return HAL_EXTRADATA_PANSCAN_WINDOW;
-	case V4L2_MPEG_VIDC_EXTRADATA_RECOVERY_POINT_SEI:
-		return HAL_EXTRADATA_RECOVERY_POINT_SEI;
-	case V4L2_MPEG_VIDC_EXTRADATA_MULTISLICE_INFO:
-		return HAL_EXTRADATA_MULTISLICE_INFO;
-	case V4L2_MPEG_VIDC_EXTRADATA_NUM_CONCEALED_MB:
-		return HAL_EXTRADATA_NUM_CONCEALED_MB;
-	case V4L2_MPEG_VIDC_EXTRADATA_METADATA_FILLER:
-		return HAL_EXTRADATA_METADATA_FILLER;
-	case V4L2_MPEG_VIDC_EXTRADATA_ASPECT_RATIO:
-		return HAL_EXTRADATA_ASPECT_RATIO;
-	case V4L2_MPEG_VIDC_EXTRADATA_INPUT_CROP:
-		return HAL_EXTRADATA_INPUT_CROP;
-	case V4L2_MPEG_VIDC_EXTRADATA_DIGITAL_ZOOM:
-		return HAL_EXTRADATA_DIGITAL_ZOOM;
-	case V4L2_MPEG_VIDC_EXTRADATA_MPEG2_SEQDISP:
-		return HAL_EXTRADATA_MPEG2_SEQDISP;
-	case V4L2_MPEG_VIDC_EXTRADATA_STREAM_USERDATA:
-		return HAL_EXTRADATA_STREAM_USERDATA;
-	case V4L2_MPEG_VIDC_EXTRADATA_FRAME_QP:
-		return HAL_EXTRADATA_FRAME_QP;
-	case V4L2_MPEG_VIDC_EXTRADATA_FRAME_BITS_INFO:
-		return HAL_EXTRADATA_FRAME_BITS_INFO;
-	case V4L2_MPEG_VIDC_EXTRADATA_LTR:
-		return HAL_EXTRADATA_LTR_INFO;
-	case V4L2_MPEG_VIDC_EXTRADATA_METADATA_MBI:
-		return HAL_EXTRADATA_METADATA_MBI;
-	default:
-		return V4L2_MPEG_VIDC_EXTRADATA_NONE;
-	}
-
-	return 0;
-}
-
-enum hal_buffer_layout_type
-vidc_buffer_layout(enum v4l2_mpeg_vidc_video_mvc_layout index)
-{
-	switch (index) {
-	case V4L2_MPEG_VIDC_VIDEO_MVC_SEQUENTIAL:
-		return HAL_BUFFER_LAYOUT_SEQ;
-	case V4L2_MPEG_VIDC_VIDEO_MVC_TOP_BOTTOM:
-		return HAL_BUFFER_LAYOUT_TOP_BOTTOM;
-	default:
-		break;
-	}
-
-	return HAL_UNUSED_BUFFER_LAYOUT;
 }
 
 int vidc_set_color_format(struct vidc_inst *inst, enum hal_buffer_type type,
