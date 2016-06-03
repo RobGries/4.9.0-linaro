@@ -839,7 +839,7 @@ static void hfi_session_init_done(struct hfi_device *hfi,
 	cap->ltr_count = init_done->ltr_count;
 	cap->pixelprocess_caps = call_hfi_op(hfi, get_core_capabilities);
 	cap->mbs_per_frame = init_done->mbs_per_frame;
-	cap->buffer_mode[CAPTURE_PORT] = init_done->alloc_mode_out;
+	cap->buffer_mode_out = init_done->alloc_mode_out;
 	cap->secure_output2_threshold = init_done->secure_output2_threshold;
 	cap->capability_set = true;
 

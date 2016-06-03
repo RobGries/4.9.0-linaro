@@ -1240,12 +1240,6 @@ struct hal_session_init_done {
 	enum hal_buffer_mode_type alloc_mode_out;
 };
 
-enum vidc_ports {
-	OUTPUT_PORT,
-	CAPTURE_PORT,
-	MAX_PORT_NUM
-};
-
 enum session_type {
 	VIDC_ENCODER = 0,
 	VIDC_DECODER,
@@ -1282,7 +1276,7 @@ struct vidc_core_capability {
 	struct hal_capability ltr_count;
 	struct hal_capability mbs_per_frame;
 	struct hal_capability secure_output2_threshold;
-	enum hal_buffer_mode_type buffer_mode[MAX_PORT_NUM];
+	enum hal_buffer_mode_type buffer_mode_out;
 	u32 pixelprocess_caps;
 	u32 capability_set;
 };
