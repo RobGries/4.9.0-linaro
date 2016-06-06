@@ -18,7 +18,6 @@
 #include <media/v4l2-event.h>
 #include <media/v4l2-ctrls.h>
 #include <media/videobuf2-dma-sg.h>
-#include <media/msm-v4l2-controls.h>
 
 #include "vdec.h"
 #include "vdec_ctrls.h"
