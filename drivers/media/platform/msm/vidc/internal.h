@@ -84,51 +84,15 @@ struct venc_controls {
 	u32 h264_loop_filter_mode;
 	u32 h264_loop_filter_alpha;
 	u32 h264_loop_filter_beta;
-	u32 h264_vui_timing_info; /* enable by default ?*/
-	u32 h264_au_delimiter; /* generate access unit delimiter */
-	u32 h264_vui_bitstream_restrict;
-	u32 h264_nal_svc; /* H264/AVC SVC NAL extension */
-
-	u32 mpeg4_time_resolution; /* MPEG4_TIME_RESOLUTION */
 
 	u32 vp8_min_qp;
 	u32 vp8_max_qp;
-	u32 vpx_error_resilience;
-
-	/* VC1 PERF CFG */
-	u32 iframe_xrange;
-	u32 iframe_yrange;
-	u32 pframe_xrange;
-	u32 pframe_yrange;
-	u32 bframe_xrange;
-	u32 bframe_yrange;
 
 	u32 multi_slice_mode;
 	u32 multi_slice_max_bytes;
 	u32 multi_slice_max_mb;
-	u32 multi_slice_gob;
-	u32 slice_delivery_mode;
+
 	u32 header_mode;
-	u32 preserve_text_quality;
-
-	/* initial  quantization */
-	u32 enable_inital_qp;
-	u32 iframe_qp;
-	u32 pframe_qp;
-	u32 bframe_qp;
-
-	bool deinterlace;
-	bool request_seq_header;
-
-	/* LTR */
-	u32 use_ltr_frame;
-	u32 mark_ltr_frame;
-	u32 ltr_mode;
-	u32 ltr_count;
-
-	u32 hier_p_num_layers;
-	u32 hybrid_hierp_mode;
-	u32 perf_mode;
 
 	u32 profile;
 	u32 level;
