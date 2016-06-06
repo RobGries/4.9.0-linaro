@@ -31,7 +31,7 @@ static enum hal_session_type to_session_type(int session_type)
 	case VIDC_DECODER:
 		return HAL_VIDEO_SESSION_TYPE_DECODER;
 	default:
-		return HAL_UNUSED_SESSION_TYPE;
+		return -1;
 	}
 }
 

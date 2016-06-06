@@ -79,10 +79,6 @@ enum hal_error {
 
 #define HAL_BUFFER_MAX		0xb
 
-/* NOTE: if you change this enum you MUST update the
- * "buffer-type-tz-usage-table" for any affected target
- * in arch/arm/boot/dts/<arch>.dtsi
- */
 enum hal_buffer_type {
 	HAL_BUFFER_NONE			= 0x0,
 	HAL_BUFFER_INPUT		= 0x1,
@@ -126,7 +122,7 @@ enum hal_extradata_id {
 };
 
 enum hal_property {
-	HAL_CONFIG_FRAME_RATE	= 0x04000001,
+	HAL_CONFIG_FRAME_RATE					= 0x04000001,
 	HAL_PARAM_UNCOMPRESSED_FORMAT_SELECT,			//2
 	HAL_PARAM_UNCOMPRESSED_PLANE_ACTUAL_CONSTRAINTS_INFO,	//3
 	HAL_PARAM_UNCOMPRESSED_PLANE_ACTUAL_INFO,		//4
@@ -231,7 +227,6 @@ enum hal_session_type {
 	HAL_VIDEO_SESSION_TYPE_VPE,
 	HAL_VIDEO_SESSION_TYPE_ENCODER,
 	HAL_VIDEO_SESSION_TYPE_DECODER,
-	HAL_UNUSED_SESSION_TYPE = 0x10000000,
 };
 
 enum hal_multi_stream_type {
@@ -239,7 +234,6 @@ enum hal_multi_stream_type {
 	HAL_VIDEO_DECODER_PRIMARY	= 0x1,
 	HAL_VIDEO_DECODER_SECONDARY	= 0x2,
 	HAL_VIDEO_DECODER_BOTH_OUTPUTS	= 0x4,
-	HAL_VIDEO_UNUSED_OUTPUTS	= 0x10000000,
 };
 
 enum hal_core_capabilities {
@@ -247,7 +241,6 @@ enum hal_core_capabilities {
 	HAL_VIDEO_ENCODER_SCALING_CAPABILITY		= 0x2,
 	HAL_VIDEO_ENCODER_DEINTERLACE_CAPABILITY	= 0x4,
 	HAL_VIDEO_DECODER_MULTI_STREAM_CAPABILITY	= 0x8,
-	HAL_VIDEO_UNUSED_CAPABILITY			= 0x10000000,
 };
 
 enum hal_default_properties {
@@ -285,7 +278,6 @@ enum hal_h263_profile {
 	HAL_H263_PROFILE_INTERNET		= 0x40,
 	HAL_H263_PROFILE_INTERLACE		= 0x80,
 	HAL_H263_PROFILE_HIGHLATENCY		= 0x100,
-	HAL_UNUSED_H263_PROFILE			= 0x10000000,
 };
 
 enum hal_h263_level {
@@ -297,7 +289,6 @@ enum hal_h263_level {
 	HAL_H263_LEVEL_50	= 0x20,
 	HAL_H263_LEVEL_60	= 0x40,
 	HAL_H263_LEVEL_70	= 0x80,
-	HAL_UNUSED_H263_LEVEL	= 0x10000000,
 };
 
 enum hal_mpeg2_profile {
@@ -307,7 +298,6 @@ enum hal_mpeg2_profile {
 	HAL_MPEG2_PROFILE_SNR		= 0x8,
 	HAL_MPEG2_PROFILE_SPATIAL	= 0x10,
 	HAL_MPEG2_PROFILE_HIGH		= 0x20,
-	HAL_UNUSED_MPEG2_PROFILE	= 0x10000000,
 };
 
 enum hal_mpeg2_level {
@@ -315,7 +305,6 @@ enum hal_mpeg2_level {
 	HAL_MPEG2_LEVEL_ML	= 0x2,
 	HAL_MPEG2_LEVEL_H14	= 0x4,
 	HAL_MPEG2_LEVEL_HL	= 0x8,
-	HAL_UNUSED_MEPG2_LEVEL	= 0x10000000,
 };
 
 enum hal_mpeg4_profile {
@@ -335,7 +324,6 @@ enum hal_mpeg4_profile {
 	HAL_MPEG4_PROFILE_ADVANCEDCORE		= 0x2000,
 	HAL_MPEG4_PROFILE_ADVANCEDSCALABLE	= 0x4000,
 	HAL_MPEG4_PROFILE_SIMPLESCALABLE	= 0x8000,
-	HAL_UNUSED_MPEG4_PROFILE		= 0x10000000,
 };
 
 enum hal_mpeg4_level {
@@ -353,7 +341,6 @@ enum hal_mpeg4_level {
 	HAL_MPEG4_LEVEL_8			= 0x7f000003,
 	HAL_MPEG4_LEVEL_9			= 0x7f000004,
 	HAL_MPEG4_LEVEL_3b			= 0x7f000005,
-	HAL_UNUSED_MPEG4_LEVEL			= 0x10000000,
 };
 
 enum hal_h264_profile {
@@ -366,7 +353,6 @@ enum hal_h264_profile {
 	HAL_H264_PROFILE_HIGH444		= 0x40,
 	HAL_H264_PROFILE_CONSTRAINED_BASE	= 0x80,
 	HAL_H264_PROFILE_CONSTRAINED_HIGH	= 0x100,
-	HAL_UNUSED_H264_PROFILE			= 0x10000000,
 };
 
 enum hal_h264_level {
@@ -387,14 +373,12 @@ enum hal_h264_level {
 	HAL_H264_LEVEL_5	= 0x4000,
 	HAL_H264_LEVEL_51	= 0x8000,
 	HAL_H264_LEVEL_52	= 0x10000,
-	HAL_UNUSED_H264_LEVEL	= 0x10000000,
 };
 
 enum hal_hevc_profile {
 	HAL_HEVC_PROFILE_MAIN		= 0x1,
 	HAL_HEVC_PROFILE_MAIN10		= 0x2,
 	HAL_HEVC_PROFILE_MAIN_STILL_PIC	= 0x4,
-	HAL_UNUSED_HEVC_PROFILE		= 0x10000000,
 };
 
 enum hal_hevc_level {
@@ -424,13 +408,11 @@ enum hal_hevc_level {
 	HAL_HEVC_HIGH_TIER_LEVEL_6	= 0x20000400,
 	HAL_HEVC_HIGH_TIER_LEVEL_6_1	= 0x20000800,
 	HAL_HEVC_HIGH_TIER_LEVEL_6_2	= 0x20001000,
-	HAL_UNUSED_HEVC_TIER_LEVEL	= 0x80000000,
 };
 
 enum hal_hevc_tier {
 	HAL_HEVC_TIER_MAIN	= 0x1,
 	HAL_HEVC_TIER_HIGH	= 0x2,
-	HAL_UNUSED_HEVC_TIER	= 0x10000000,
 };
 
 enum hal_vpx_profile {
@@ -447,7 +429,6 @@ enum hal_vc1_profile {
 	HAL_VC1_PROFILE_SIMPLE		= 0x1,
 	HAL_VC1_PROFILE_MAIN		= 0x2,
 	HAL_VC1_PROFILE_ADVANCED	= 0x4,
-	HAL_UNUSED_VC1_PROFILE		= 0x10000000,
 };
 
 enum hal_vc1_level {
@@ -459,14 +440,12 @@ enum hal_vc1_level {
 	HAL_VC1_LEVEL_2		= 0x20,
 	HAL_VC1_LEVEL_3		= 0x40,
 	HAL_VC1_LEVEL_4		= 0x80,
-	HAL_UNUSED_VC1_LEVEL	= 0x10000000,
 };
 
 enum hal_divx_format {
 	HAL_DIVX_FORMAT_4,
 	HAL_DIVX_FORMAT_5,
 	HAL_DIVX_FORMAT_6,
-	HAL_UNUSED_DIVX_FORMAT	= 0x10000000,
 };
 
 enum hal_divx_profile {
@@ -475,12 +454,10 @@ enum hal_divx_profile {
 	HAL_DIVX_PROFILE_MT		= 0x4,
 	HAL_DIVX_PROFILE_HT		= 0x8,
 	HAL_DIVX_PROFILE_HD		= 0x10,
-	HAL_UNUSED_DIVX_PROFILE		= 0x10000000,
 };
 
 enum hal_mvc_profile {
 	HAL_MVC_PROFILE_STEREO_HIGH	= 0x1000,
-	HAL_UNUSED_MVC_PROFILE		= 0x10000000,
 };
 
 enum hal_mvc_level {
@@ -500,7 +477,6 @@ enum hal_mvc_level {
 	HAL_MVC_LEVEL_42	= 0x2000,
 	HAL_MVC_LEVEL_5		= 0x4000,
 	HAL_MVC_LEVEL_51	= 0x8000,
-	HAL_UNUSED_MVC_LEVEL	= 0x10000000,
 };
 
 struct hal_framerate {
@@ -524,7 +500,6 @@ enum hal_uncompressed_format {
 	HAL_COLOR_FORMAT_BGR888		= 0x1000,
 	HAL_COLOR_FORMAT_NV12_UBWC	= 0x2000,
 	HAL_COLOR_FORMAT_NV12_TP10_UBWC	= 0x4000,
-	HAL_UNUSED_COLOR		= 0x10000000,
 };
 
 enum hal_ssr_trigger_type {
@@ -632,7 +607,6 @@ enum hal_nal_stream_format {
 enum hal_output_order {
 	HAL_OUTPUT_ORDER_DISPLAY,
 	HAL_OUTPUT_ORDER_DECODE,
-	HAL_UNUSED_OUTPUT	= 0x10000000,
 };
 
 enum hal_picture {
@@ -693,14 +667,12 @@ struct hal_profile_level_supported {
 enum hal_h264_entropy {
 	HAL_H264_ENTROPY_CAVLC	= 1,
 	HAL_H264_ENTROPY_CABAC	= 2,
-	HAL_UNUSED_ENTROPY	= 0x10000000,
 };
 
 enum hal_h264_cabac_model {
 	HAL_H264_CABAC_MODEL_0	= 1,
 	HAL_H264_CABAC_MODEL_1	= 2,
 	HAL_H264_CABAC_MODEL_2	= 4,
-	HAL_UNUSED_CABAC	= 0x10000000,
 };
 
 struct hal_h264_entropy_control {
@@ -714,7 +686,6 @@ enum hal_rate_control {
 	HAL_RATE_CONTROL_VBR_CFR,
 	HAL_RATE_CONTROL_CBR_VFR,
 	HAL_RATE_CONTROL_CBR_CFR,
-	HAL_UNUSED_RC = 0x10000000,
 };
 
 struct hal_mpeg4_time_resolution {
@@ -729,7 +700,6 @@ enum hal_h264_db_mode {
 	HAL_H264_DB_MODE_DISABLE,
 	HAL_H264_DB_MODE_SKIP_SLICE_BOUNDARY,
 	HAL_H264_DB_MODE_ALL_BOUNDARY,
-	HAL_UNUSED_H264_DB = 0x10000000,
 };
 
 struct hal_h264_db_control {
@@ -776,14 +746,12 @@ enum hal_rotate {
 	HAL_ROTATE_90,
 	HAL_ROTATE_180,
 	HAL_ROTATE_270,
-	HAL_UNUSED_ROTATE = 0x10000000,
 };
 
 enum hal_flip {
 	HAL_FLIP_NONE,
 	HAL_FLIP_HORIZONTAL,
 	HAL_FLIP_VERTICAL,
-	HAL_UNUSED_FLIP = 0x10000000,
 };
 
 struct hal_operations {
@@ -797,7 +765,6 @@ enum hal_intra_refresh_mode {
 	HAL_INTRA_REFRESH_ADAPTIVE,
 	HAL_INTRA_REFRESH_CYCLIC_ADAPTIVE,
 	HAL_INTRA_REFRESH_RANDOM,
-	HAL_UNUSED_INTRA = 0x10000000,
 };
 
 struct hal_intra_refresh {
@@ -812,7 +779,6 @@ enum hal_multi_slice {
 	HAL_MULTI_SLICE_BY_MB_COUNT,
 	HAL_MULTI_SLICE_BY_BYTE_COUNT,
 	HAL_MULTI_SLICE_GOB,
-	HAL_UNUSED_SLICE = 0x10000000,
 };
 
 struct hal_multi_slice_control {
@@ -835,11 +801,11 @@ struct hal_buffer_requirements {
 	u32 alignment;
 };
 
-enum hal_priority {/* Priority increases with number */
+/* Priority increases with number */
+enum hal_priority {
 	HAL_PRIORITY_LOW	= 10,
 	HAL_PRIOIRTY_MEDIUM	= 20,
 	HAL_PRIORITY_HIGH	= 30,
-	HAL_UNUSED_PRIORITY	= 0x10000000,
 };
 
 struct hal_batch_info {
@@ -864,7 +830,6 @@ enum hal_interlace_format {
 	HAL_INTERLACE_INTERLEAVE_FRAME_BOTTOMFIELDFIRST	= 0x04,
 	HAL_INTERLACE_FRAME_TOPFIELDFIRST		= 0x08,
 	HAL_INTERLACE_FRAME_BOTTOMFIELDFIRST		= 0x10,
-	HAL_UNUSED_INTERLACE				= 0x10000000,
 };
 
 struct hal_interlace_format_supported {
@@ -875,7 +840,6 @@ struct hal_interlace_format_supported {
 enum hal_chroma_site {
 	HAL_CHROMA_SITE_0,
 	HAL_CHROMA_SITE_1,
-	HAL_UNUSED_CHROMA = 0x10000000,
 };
 
 struct hal_properties_supported {
@@ -893,7 +857,6 @@ enum hal_capability_type {
 	HAL_CAPABILITY_SCALE_Y,
 	HAL_CAPABILITY_BITRATE,
 	HAL_CAPABILITY_SECURE_OUTPUT2_THRESHOLD,
-	HAL_UNUSED_CAPABILITY = 0x10000000,
 };
 
 struct hal_capability  {
@@ -924,7 +887,6 @@ struct hal_multi_view_format {
 enum hal_buffer_layout_type {
 	HAL_BUFFER_LAYOUT_TOP_BOTTOM,
 	HAL_BUFFER_LAYOUT_SEQ,
-	HAL_UNUSED_BUFFER_LAYOUT = 0x10000000,
 };
 
 struct hal_mvc_buffer_layout {
@@ -982,7 +944,6 @@ enum hal_resource_id {
 	VIDC_RESOURCE_NONE,
 	VIDC_RESOURCE_OCMEM,
 	VIDC_RESOURCE_VMEM,
-	VIDC_UNUSED_RESOURCE = 0x10000000,
 };
 
 struct hal_resource_hdr {
@@ -1046,14 +1007,12 @@ enum hal_flush {
 	HAL_FLUSH_OUTPUT,
 	HAL_FLUSH_OUTPUT2,
 	HAL_FLUSH_ALL,
-	HAL_UNUSED_FLUSH = 0x10000000,
 };
 
 enum hal_event_type {
 	HAL_EVENT_SEQ_CHANGED_SUFFICIENT_RESOURCES,
 	HAL_EVENT_SEQ_CHANGED_INSUFFICIENT_RESOURCES,
 	HAL_EVENT_RELEASE_BUFFER_REFERENCE,
-	HAL_UNUSED_SEQCHG = 0x10000000,
 };
 
 enum hal_buffer_mode_type {
@@ -1243,7 +1202,6 @@ struct hal_session_init_done {
 enum session_type {
 	VIDC_ENCODER = 0,
 	VIDC_DECODER,
-	VIDC_MAX_DEVICES,
 };
 
 /* define core states */
@@ -1399,8 +1357,6 @@ struct hfi_ops {
 	int (*get_core_capabilities)(void);
 	int (*resume)(struct hfi_device *hfi);
 	int (*suspend)(struct hfi_device *hfi);
-	enum hal_default_properties
-		(*get_default_properties)(struct hfi_device *hfi);
 
 	/* interrupt operations */
 	irqreturn_t (*isr)(int irq, struct hfi_device *hfi);

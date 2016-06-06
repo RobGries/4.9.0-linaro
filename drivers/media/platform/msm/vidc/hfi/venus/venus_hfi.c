@@ -1555,18 +1555,6 @@ static int venus_hfi_suspend(struct hfi_device *hfi)
 	return 0;
 }
 
-static enum hal_default_properties
-venus_hfi_get_default_properties(struct hfi_device *hfi)
-{
-	struct venus_hfi_device *hdev = to_hfi_priv(hfi);
-	enum hal_default_properties prop = 0;
-
-	if (hdev->packetization_type == HFI_PACKETIZATION_3XX)
-		prop = HAL_VIDEO_DYNAMIC_BUF_MODE;
-
-	return prop;
-}
-
 static const struct hfi_ops venus_hfi_ops = {
 	.core_init			= venus_hfi_core_init,
 	.core_deinit			= venus_hfi_core_deinit,
@@ -1593,7 +1581,6 @@ static const struct hfi_ops venus_hfi_ops = {
 	.get_core_capabilities		= venus_hfi_get_core_capabilities,
 	.resume				= venus_hfi_resume,
 	.suspend			= venus_hfi_suspend,
-	.get_default_properties		= venus_hfi_get_default_properties,
 
 	.isr				= venus_isr,
 	.isr_thread			= venus_isr_thread,
