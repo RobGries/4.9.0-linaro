@@ -112,7 +112,6 @@ struct vidc_inst {
 
 	int streamoff;
 	int streamon;
-	struct buffer_requirements buff_req;
 	struct vb2_queue bufq_out;
 	struct vb2_queue bufq_cap;
 	void *vb2_ctx_cap;
@@ -139,16 +138,13 @@ struct vidc_inst {
 	const struct vidc_format *fmt_cap;
 	unsigned int num_input_bufs;
 	unsigned int num_output_bufs;
-
+	struct buffer_requirements buff_req;
 	struct vidc_core_capability capability;
 	bool in_reconfig;
 	u32 reconfig_width;
 	u32 reconfig_height;
 
 	u64 sequence;
-
-	/* encoder fields */
-	atomic_t seq_hdr_reqs;
 };
 
 #define ctrl_to_inst(ctrl)	\
