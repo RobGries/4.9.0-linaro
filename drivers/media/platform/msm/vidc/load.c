@@ -24,7 +24,7 @@ static u32 get_inst_load(struct vidc_inst *inst)
 	u32 w = inst->width;
 	u32 h = inst->height;
 
-	if (!inst->hfi_inst || !(inst->hfi_inst->state >= INST_OPEN &&
+	if (!inst->hfi_inst || !(inst->hfi_inst->state >= INST_INIT &&
 				 inst->hfi_inst->state < INST_STOP))
 		return 0;
 

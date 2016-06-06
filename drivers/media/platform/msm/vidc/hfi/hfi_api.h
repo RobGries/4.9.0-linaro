@@ -1254,12 +1254,11 @@ enum session_type {
 /* define instance states */
 #define INST_INVALID			1
 #define INST_UNINIT			2
-#define INST_OPEN			3
+#define INST_INIT			3
 #define INST_LOAD_RESOURCES		4
 #define INST_START			5
 #define INST_STOP			6
 #define INST_RELEASE_RESOURCES		7
-#define INST_CLOSE			8
 
 struct vidc_core_capability {
 	struct hal_capability width;

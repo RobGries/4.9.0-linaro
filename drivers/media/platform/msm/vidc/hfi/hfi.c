@@ -240,7 +240,7 @@ int vidc_hfi_session_init(struct hfi_device *hfi, struct hfi_device_inst *inst,
 	}
 
 	ret = 0;
-	inst->state = INST_OPEN;
+	inst->state = INST_INIT;
 
 unlock:
 	mutex_unlock(&inst->lock);
@@ -273,12 +273,12 @@ int vidc_hfi_session_deinit(struct hfi_device *hfi,
 
 	mutex_lock(&inst->lock);
 
-	if (inst->state == INST_CLOSE) {
+	if (inst->state == INST_UNINIT) {
 		ret = 0;
 		goto unlock;
 	}
 
-	if (inst->state < INST_OPEN) {
+	if (inst->state < INST_INIT) {
 		ret = -EINVAL;
 		goto unlock;
 	}
@@ -418,7 +418,7 @@ int vidc_hfi_session_load_res(struct hfi_device *hfi,
 
 	mutex_lock(&inst->lock);
 
-	if (inst->state != INST_OPEN) {
+	if (inst->state != INST_INIT) {
 		ret = -EINVAL;
 		goto unlock;
 	}
@@ -555,12 +555,9 @@ int vidc_hfi_session_get_property(struct hfi_device *hfi,
 {
 	int ret;
 
-	if (!hfi || !inst)
-		return -EINVAL;
-
 	mutex_lock(&inst->lock);
 
-	if (inst->state < INST_OPEN || inst->state >= INST_CLOSE) {
+	if (inst->state < INST_INIT || inst->state >= INST_STOP) {
 		ret = -EINVAL;
 		goto unlock;
 	}
@@ -600,11 +597,9 @@ int vidc_hfi_session_set_property(struct hfi_device *hfi,
 {
 	int ret;
 
-	if (!hfi || !inst)
-		return -EINVAL;
-
 	mutex_lock(&inst->lock);
-	if (inst->state < INST_OPEN || inst->state >= INST_CLOSE) {
+
+	if (inst->state < INST_INIT || inst->state >= INST_STOP) {
 		ret = -EINVAL;
 		goto unlock;
 	}
@@ -656,10 +651,10 @@ int vidc_hfi_create(struct hfi_device *hfi, struct vidc_resources *res)
 		break;
 	case VIDC_Q6:
 	default:
-		return -ENOTSUPP;
+		ret = -ENOTSUPP;
 	}
 
-	return 0;
+	return ret;
 }
 
 void vidc_hfi_destroy(struct hfi_device *hfi)
