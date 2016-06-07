@@ -74,7 +74,7 @@ static int session_set_buf(struct vb2_buffer *vb)
 	return 0;
 }
 
-static int session_unset_bufs(struct vidc_inst *inst)
+static int session_unregister_bufs(struct vidc_inst *inst)
 {
 	struct device *dev = inst->core->dev;
 	struct hfi_device *hfi = &inst->core->hfi;
@@ -99,7 +99,7 @@ static int session_unset_bufs(struct vidc_inst *inst)
 	return ret;
 }
 
-static int session_set_bufs(struct vidc_inst *inst)
+static int session_register_bufs(struct vidc_inst *inst)
 {
 	struct device *dev = inst->core->dev;
 	struct hfi_device *hfi = &inst->core->hfi;
@@ -352,7 +352,7 @@ void vidc_vb2_stop_streaming(struct vb2_queue *q)
 		goto abort;
 	}
 
-	ret = session_unset_bufs(inst);
+	ret = session_unregister_bufs(inst);
 	if (ret) {
 		dev_err(dev, "failed to release capture buffers: %d\n", ret);
 		goto abort;
@@ -394,7 +394,7 @@ int vidc_vb2_start_streaming(struct vidc_inst *inst)
 	struct vidc_buffer *buf, *n;
 	int ret;
 
-	ret = session_set_bufs(inst);
+	ret = session_register_bufs(inst);
 	if (ret)
 		return ret;
 
