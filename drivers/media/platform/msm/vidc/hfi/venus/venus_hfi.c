@@ -321,13 +321,13 @@ static int venus_read_queue(struct venus_hfi_device *hdev,
 }
 
 static int venus_alloc(struct venus_hfi_device *hdev, struct mem_desc *vmem,
-		       u32 size, u32 align, u32 flags)
+		       u32 size, u32 align)
 {
 	struct device *dev = hdev->dev;
 	struct smem *mem;
 	int ret;
 
-	mem = smem_alloc(hdev->dev, size, align, flags, 1);
+	mem = smem_alloc(hdev->dev, size, align, 1);
 	if (IS_ERR(mem))
 		return PTR_ERR(mem);
 
@@ -752,7 +752,7 @@ static int venus_interface_queues_init(struct venus_hfi_device *hdev)
 
 	size = SHARED_QSIZE - ALIGNED_SFR_SIZE - ALIGNED_QDSS_SIZE;
 
-	ret = venus_alloc(hdev, &mem, size, 1, 0);
+	ret = venus_alloc(hdev, &mem, size, 1);
 	if (ret)
 		return ret;
 
@@ -774,7 +774,7 @@ static int venus_interface_queues_init(struct venus_hfi_device *hdev)
 		venus_set_qhdr_defaults(queue->qhdr);
 	}
 
-	ret = venus_alloc(hdev, &mem, ALIGNED_SFR_SIZE, 1, 0);
+	ret = venus_alloc(hdev, &mem, ALIGNED_SFR_SIZE, 1);
 	if (ret) {
 		hdev->sfr.da = 0;
 	} else {

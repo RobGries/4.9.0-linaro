@@ -92,7 +92,6 @@ static int internal_alloc_and_set(struct vidc_inst *inst,
 {
 	struct smem *smem;
 	struct vidc_internal_buf *buf;
-	u32 flags = 0;
 	unsigned int i;
 	int ret = 0;
 
@@ -100,7 +99,7 @@ static int internal_alloc_and_set(struct vidc_inst *inst,
 		return 0;
 
 	for (i = 0; i < bufreq->count_actual; i++) {
-		smem = smem_alloc(inst->core->dev, bufreq->size, 1, flags, 0);
+		smem = smem_alloc(inst->core->dev, bufreq->size, 1, 0);
 		if (IS_ERR(smem)) {
 			ret = PTR_ERR(smem);
 			goto err_no_mem;

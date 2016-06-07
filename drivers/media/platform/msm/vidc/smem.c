@@ -24,7 +24,7 @@
 #include "smem.h"
 
 static int alloc_dma_mem(struct device *dev, size_t size, u32 align,
-			 u32 flags, struct smem *mem, int map_kernel)
+			 struct smem *mem, int map_kernel)
 {
 	int ret;
 
@@ -35,7 +35,6 @@ static int alloc_dma_mem(struct device *dev, size_t size, u32 align,
 
 	size = ALIGN(size, SZ_4K);
 
-	mem->flags = flags;
 	mem->size = size;
 	mem->kvaddr = NULL;
 	mem->smem_priv = NULL;
@@ -109,7 +108,7 @@ int smem_cache_operations(struct smem *mem, enum smem_cache_ops cache_op)
 }
 
 struct smem *smem_alloc(struct device *dev, size_t size, u32 align,
-			u32 flags, int map_kernel)
+			int map_kernel)
 {
 	struct smem *mem;
 	int ret;
@@ -121,7 +120,7 @@ struct smem *smem_alloc(struct device *dev, size_t size, u32 align,
 	if (!mem)
 		return ERR_PTR(-ENOMEM);
 
-	ret = alloc_dma_mem(dev, size, align, flags, mem, map_kernel);
+	ret = alloc_dma_mem(dev, size, align, mem, map_kernel);
 	if (ret) {
 		kfree(mem);
 		return ERR_PTR(ret);

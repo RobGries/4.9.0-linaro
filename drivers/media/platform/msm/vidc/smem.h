@@ -13,8 +13,8 @@
  *
  */
 
-#ifndef __VIDC_MSM_SMEM_H__
-#define __VIDC_MSM_SMEM_H__
+#ifndef __VIDC_SMEM_H__
+#define __VIDC_SMEM_H__
 
 #include <linux/dma-attrs.h>
 
@@ -31,7 +31,6 @@ struct smem {
 	size_t size;
 	void *kvaddr;
 	dma_addr_t da;
-	unsigned long flags;
 	void *smem_priv;
 	struct dma_attrs attrs;
 	struct device *iommu_dev;
@@ -39,9 +38,9 @@ struct smem {
 };
 
 struct smem *smem_alloc(struct device *dev, size_t size, u32 align,
-			u32 flags, int map_kernel);
+			int map_kernel);
 void smem_free(struct smem *mem);
 
 int smem_cache_operations(struct smem *mem, enum smem_cache_ops);
 
-#endif /* __VIDC_MSM_SMEM_H__ */
+#endif /* __VIDC_SMEM_H__ */
