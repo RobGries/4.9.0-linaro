@@ -1449,14 +1449,6 @@ static int venus_hfi_session_get_property(struct hfi_device_inst *inst,
 	return venus_iface_cmdq_write(hdev, &pkt);
 }
 
-static int venus_hfi_get_core_capabilities(void)
-{
-	return HAL_VIDEO_ENCODER_ROTATION_CAPABILITY |
-	       HAL_VIDEO_ENCODER_SCALING_CAPABILITY |
-	       HAL_VIDEO_ENCODER_DEINTERLACE_CAPABILITY |
-	       HAL_VIDEO_DECODER_MULTI_STREAM_CAPABILITY;
-}
-
 static int venus_hfi_resume(struct hfi_device *hfi)
 {
 	struct venus_hfi_device *hdev = to_hfi_priv(hfi);
@@ -1578,7 +1570,6 @@ static const struct hfi_ops venus_hfi_ops = {
 	.session_set_property		= venus_hfi_session_set_property,
 	.session_get_property		= venus_hfi_session_get_property,
 
-	.get_core_capabilities		= venus_hfi_get_core_capabilities,
 	.resume				= venus_hfi_resume,
 	.suspend			= venus_hfi_suspend,
 
@@ -1616,6 +1607,10 @@ int venus_hfi_create(struct hfi_device *hfi, struct vidc_resources *res)
 
 	hfi->priv = hdev;
 	hfi->ops = &venus_hfi_ops;
+	hfi->core_caps = HAL_VIDEO_ENCODER_ROTATION_CAPABILITY |
+			 HAL_VIDEO_ENCODER_SCALING_CAPABILITY |
+			 HAL_VIDEO_ENCODER_DEINTERLACE_CAPABILITY |
+			 HAL_VIDEO_DECODER_MULTI_STREAM_CAPABILITY;
 
 	ret = venus_interface_queues_init(hdev);
 	if (ret) {

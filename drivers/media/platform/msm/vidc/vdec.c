@@ -1135,11 +1135,11 @@ static void vdec_inst_init(struct vidc_inst *inst)
 	inst->timeperframe.numerator = 1;
 	inst->timeperframe.denominator = 30;
 
-	caps->width.min = MIN_SUPPORTED_WIDTH;
-	caps->width.max = DEFAULT_WIDTH;
+	caps->width.min = 64;
+	caps->width.max = 1920;
 	caps->width.step_size = 1;
-	caps->height.min = MIN_SUPPORTED_HEIGHT;
-	caps->height.max = DEFAULT_HEIGHT;
+	caps->height.min = 64;
+	caps->height.max = ALIGN(1080, 32);
 	caps->height.step_size = 1;
 	caps->frame_rate.min = 1;
 	caps->frame_rate.max = 30;

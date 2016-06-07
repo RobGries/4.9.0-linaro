@@ -1292,6 +1292,9 @@ struct hfi_device {
 	u32 enc_codecs;
 	u32 dec_codecs;
 
+	/* core capabilities */
+	enum hal_core_capabilities core_caps;
+
 	/* internal hfi operations */
 	void *priv;
 	const struct hfi_ops *ops;
@@ -1335,7 +1338,6 @@ struct hfi_ops {
 	int (*session_get_property)(struct hfi_device_inst *inst,
 				    enum hal_property ptype);
 
-	int (*get_core_capabilities)(void);
 	int (*resume)(struct hfi_device *hfi);
 	int (*suspend)(struct hfi_device *hfi);
 
