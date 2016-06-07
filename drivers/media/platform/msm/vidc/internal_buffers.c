@@ -26,24 +26,17 @@ struct vidc_internal_buf {
 static enum hal_buffer_type
 scratch_buf_sufficient(struct vidc_inst *inst, enum hal_buffer_type buffer_type)
 {
-	struct device *dev = inst->core->dev;
 	struct hal_buffer_requirements *bufreq;
 	struct vidc_internal_buf *buf;
-	int count = 0;
+	u32 count = 0;
 
 	bufreq = vidc_get_buff_req_buffer(inst, buffer_type);
 	if (!bufreq)
-		goto not_sufficient;
+		return HAL_BUFFER_NONE;
 
 	/* Check if current scratch buffers are sufficient */
 	mutex_lock(&inst->scratchbufs.lock);
 	list_for_each_entry(buf, &inst->scratchbufs.list, list) {
-		if (!buf->smem) {
-			dev_err(dev, "%s: invalid buf handle\n", __func__);
-			mutex_unlock(&inst->scratchbufs.lock);
-			goto not_sufficient;
-		}
-
 		if (buf->type == buffer_type &&
 		    buf->smem->size >= bufreq->size)
 			count++;
@@ -51,12 +44,9 @@ scratch_buf_sufficient(struct vidc_inst *inst, enum hal_buffer_type buffer_type)
 	mutex_unlock(&inst->scratchbufs.lock);
 
 	if (count != bufreq->count_actual)
-		goto not_sufficient;
+		return HAL_BUFFER_NONE;
 
 	return buffer_type;
-
-not_sufficient:
-	return HAL_BUFFER_NONE;
 }
 
 static int internal_set_buf_on_fw(struct vidc_inst *inst,
@@ -143,11 +133,6 @@ scratch_reuse_buffer(struct vidc_inst *inst, enum hal_buffer_type buffer_type)
 
 	mutex_lock(&inst->scratchbufs.lock);
 	list_for_each_entry(buf, &inst->scratchbufs.list, list) {
-		if (!buf->smem) {
-			reused = false;
-			break;
-		}
-
 		if (buf->type != buffer_type)
 			continue;
 
@@ -201,7 +186,6 @@ static int persist_set_buffer(struct vidc_inst *inst, enum hal_buffer_type type)
 static int scratch_release_buffers(struct vidc_inst *inst, bool reuse)
 {
 	struct hfi_device *hfi = &inst->core->hfi;
-	struct smem *smem;
 	struct vidc_internal_buf *buf, *n;
 	struct hal_buffer_addr_info bai = {0};
 	enum hal_buffer_type sufficiency = HAL_BUFFER_NONE;
@@ -218,11 +202,10 @@ static int scratch_release_buffers(struct vidc_inst *inst, bool reuse)
 
 	mutex_lock(&inst->scratchbufs.lock);
 	list_for_each_entry_safe(buf, n, &inst->scratchbufs.list, list) {
-		smem = buf->smem;
-		bai.buffer_size = smem->size;
+		bai.buffer_size = buf->smem->size;
 		bai.buffer_type = buf->type;
 		bai.num_buffers = 1;
-		bai.device_addr = smem->da;
+		bai.device_addr = buf->smem->da;
 		bai.response_required = true;
 
 		ret = vidc_hfi_session_unset_buffers(hfi, inst->hfi_inst, &bai);
@@ -243,18 +226,16 @@ static int scratch_release_buffers(struct vidc_inst *inst, bool reuse)
 static int persist_release_buffers(struct vidc_inst *inst)
 {
 	struct hfi_device *hfi = &inst->core->hfi;
-	struct smem *smem;
 	struct vidc_internal_buf *buf, *n;
 	struct hal_buffer_addr_info bai = {0};
 	int ret = 0;
 
 	mutex_lock(&inst->persistbufs.lock);
 	list_for_each_entry_safe(buf, n, &inst->persistbufs.list, list) {
-		smem = buf->smem;
-		bai.buffer_size = smem->size;
+		bai.buffer_size = buf->smem->size;
 		bai.buffer_type = buf->type;
 		bai.num_buffers = 1;
-		bai.device_addr = smem->da;
+		bai.device_addr = buf->smem->da;
 		bai.response_required = true;
 
 		ret = vidc_hfi_session_unset_buffers(hfi, inst->hfi_inst, &bai);
