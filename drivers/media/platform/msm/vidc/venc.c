@@ -1282,29 +1282,27 @@ static int venc_start_streaming(struct vb2_queue *q, unsigned int count)
 	if (!vb2_is_streaming(queue))
 		return 0;
 
-#if 1
+	inst->sequence = 0;
+
 	ret = pm_runtime_get_sync(dev);
 	if (ret < 0) {
 		dev_err(dev, "%s: pm_runtime_get_sync (%d)\n", __func__, ret);
 		return ret;
 	}
-#endif
-
-	inst->sequence = 0;
 
 	ret = venc_init_session(inst);
 	if (ret)
-		return ret;
+		goto put_sync;
 
 	ret = venc_set_properties(inst);
 	if (ret) {
 		dev_err(dev, "set properties (%d)\n", ret);
-		return ret;
+		goto deinit_sess;
 	}
 
 	ret = venc_check_configuration(inst);
 	if (ret)
-		return ret;
+		goto deinit_sess;
 
 	buf_count.type = HAL_BUFFER_OUTPUT;
 	buf_count.count_actual = inst->num_output_bufs;
@@ -1313,7 +1311,7 @@ static int venc_start_streaming(struct vb2_queue *q, unsigned int count)
 					    &buf_count);
 	if (ret) {
 		dev_err(dev, "set output buf count failed (%d)", ret);
-		return ret;
+		goto deinit_sess;
 	}
 
 	buf_count.type = HAL_BUFFER_INPUT;
@@ -1323,16 +1321,22 @@ static int venc_start_streaming(struct vb2_queue *q, unsigned int count)
 					    &buf_count);
 	if (ret) {
 		dev_err(dev, "set input buf count failed (%d)", ret);
-		return ret;
+		goto deinit_sess;
 	}
 
 	ret = vidc_vb2_start_streaming(inst);
 	if (ret) {
 		dev_err(dev, "start streaming fail (%d)\n", ret);
-		return ret;
+		goto deinit_sess;
 	}
 
 	return 0;
+
+deinit_sess:
+	vidc_hfi_session_deinit(hfi, inst->hfi_inst);
+put_sync:
+	pm_runtime_put_sync(dev);
+	return ret;
 }
 
 static const struct vb2_ops venc_vb2_ops = {
