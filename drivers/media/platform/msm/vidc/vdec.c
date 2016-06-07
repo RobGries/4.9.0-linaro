@@ -480,27 +480,10 @@ static int vdec_prepare_buf(struct file *file, void *fh, struct v4l2_buffer *b)
 static int vdec_qbuf(struct file *file, void *fh, struct v4l2_buffer *b)
 {
 	struct vidc_inst *inst = to_inst(file);
-	struct device *dev = inst->core->dev;
 	struct vb2_queue *queue = vidc_to_vb2q(inst, b->type);
-	unsigned int state;
 
 	if (!queue)
 		return -EINVAL;
-
-	mutex_lock(&inst->hfi_inst->lock);
-	state = inst->hfi_inst->state;
-	mutex_unlock(&inst->hfi_inst->lock);
-
-	/*
-	 * it is possible userspace to continue to queuing buffres even
-	 * while we are in streamoff. Not sure is this a problem in
-	 * videobuf2 core, still. Fix it here for now.
-	 */
-	if (state >= INST_STOP) {
-		dev_dbg(dev, "%s: type:%d, invalid instance state\n", __func__,
-			b->type);
-		return -EINVAL;
-	}
 
 	return vb2_qbuf(queue, b);
 }
@@ -837,7 +820,7 @@ static int vdec_queue_setup(struct vb2_queue *q, const void *parg,
 		if (ret)
 			break;
 
-		*num_buffers = max(*num_buffers, bufreq.count_min);
+		*num_buffers = max(*num_buffers, bufreq.count_actual);
 
 		for (p = 0; p < *num_planes; p++) {
 			sizes[p] = get_framesize_nv12(p, inst->height,

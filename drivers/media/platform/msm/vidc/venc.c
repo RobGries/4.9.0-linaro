@@ -911,21 +911,8 @@ static int venc_qbuf(struct file *file, void *fh, struct v4l2_buffer *b)
 {
 	struct vidc_inst *inst = to_inst(file);
 	struct vb2_queue *queue = vidc_to_vb2q(inst, b->type);
-	unsigned int state;
 
 	if (!queue)
-		return -EINVAL;
-
-	mutex_lock(&inst->lock);
-	state = inst->hfi_inst->state;
-	mutex_unlock(&inst->lock);
-
-	/*
-	 * it is possible userspace to continue to queuing buffres even
-	 * while we are in streamoff. Not sure is this a problem in
-	 * videobuf2 core, still. Fix it here for now.
-	 */
-	if (state >= INST_STOP)
 		return -EINVAL;
 
 	return vb2_qbuf(queue, b);
@@ -943,50 +930,15 @@ venc_exportbuf(struct file *file, void *fh, struct v4l2_exportbuffer *b)
 	return vb2_expbuf(queue, b);
 }
 
-static int venc_return_buf_error(struct vidc_inst *inst, struct v4l2_buffer *b)
-{
-	struct vb2_queue *qcap, *qout;
-	struct list_head *ptr, *next;
-	struct vidc_buffer *buf;
-
-	qcap = &inst->bufq_cap;
-	qout = &inst->bufq_out;
-
-	if (vb2_is_streaming(qcap) && vb2_is_streaming(qout))
-		return 0;
-
-	mutex_lock(&inst->bufqueue_lock);
-	list_for_each_safe(ptr, next, &inst->bufqueue) {
-		buf = list_entry(ptr, struct vidc_buffer, list);
-
-		if (buf->vb.vb2_buf.type != b->type)
-			continue;
-
-		list_del(&buf->list);
-		vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_ERROR);
-	}
-	mutex_unlock(&inst->bufqueue_lock);
-
-	return 0;
-}
-
 static int venc_dqbuf(struct file *file, void *fh, struct v4l2_buffer *b)
 {
 	struct vidc_inst *inst = to_inst(file);
 	struct vb2_queue *queue = vidc_to_vb2q(inst, b->type);
-	int ret;
 
 	if (!queue)
 		return -EINVAL;
 
-	venc_return_buf_error(inst, b);
-
-	ret = vb2_dqbuf(queue, b, file->f_flags & O_NONBLOCK);
-
-	if (ret)
-		dev_err(inst->core->dev, "%s: error %d\n", __func__, ret);
-
-	return ret;
+	return vb2_dqbuf(queue, b, file->f_flags & O_NONBLOCK);
 }
 
 static int venc_streamon(struct file *file, void *fh, enum v4l2_buf_type type)
@@ -1210,7 +1162,6 @@ static int venc_queue_setup(struct vb2_queue *q, const void *parg,
 			break;
 
 		*num_buffers = max(*num_buffers, bufreq.count_actual);
-		*num_buffers = clamp_val(*num_buffers, 4, VIDEO_MAX_FRAME);
 		inst->num_output_bufs = *num_buffers;
 
 		sizes[0] = get_framesize_compressed(0, inst->height,
