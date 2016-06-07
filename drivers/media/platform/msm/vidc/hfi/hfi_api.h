@@ -1214,21 +1214,6 @@ enum session_type {
 #define INST_STOP			6
 #define INST_RELEASE_RESOURCES		7
 
-struct vidc_core_capability {
-	struct hal_capability width;
-	struct hal_capability height;
-	struct hal_capability frame_rate;
-	struct hal_capability scale_x;
-	struct hal_capability scale_y;
-	struct hal_capability hier_p;
-	struct hal_capability ltr_count;
-	struct hal_capability mbs_per_frame;
-	struct hal_capability secure_output2_threshold;
-	enum hal_buffer_mode_type buffer_mode_out;
-	u32 pixelprocess_caps;
-	u32 capability_set;
-};
-
 enum vidc_hal_type {
 	VIDC_VENUS,
 	VIDC_Q6,
@@ -1261,24 +1246,21 @@ struct hfi_inst_ops {
 
 struct hfi_device_inst {
 	struct list_head list;
-
-	enum hal_session_type session_type;
-	enum hal_video_codec codec;
 	void *device;
-
 	struct mutex lock;
 	unsigned int state;
 	struct completion done;
 	unsigned int error;
 
-	union hal_get_property hprop;
-
 	/* instance operations passed by outside world */
 	const struct hfi_inst_ops *ops;
 	void *ops_priv;
 
+	enum hal_session_type session_type;
+	enum hal_video_codec codec;
+	union hal_get_property hprop;
+
 	/* filled by session_init */
-	struct vidc_core_capability capability;
 	struct hal_session_init_done caps;
 
 	/* buffer requirements */

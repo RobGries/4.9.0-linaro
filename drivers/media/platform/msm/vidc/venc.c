@@ -682,7 +682,7 @@ venc_try_fmt_common(struct vidc_inst *inst, struct v4l2_format *f)
 {
 	struct v4l2_pix_format_mplane *pixmp = &f->fmt.pix_mp;
 	struct v4l2_plane_pix_format *pfmt = pixmp->plane_fmt;
-	struct vidc_core_capability *cap = &inst->capability;
+	struct hal_session_init_done *cap = &inst->hfi_inst->caps;
 	const struct vidc_format *fmt;
 	unsigned int p;
 
@@ -1116,9 +1116,6 @@ static int venc_init_session(struct vidc_inst *inst)
 		return ret;
 	}
 
-	/* TODO: avoid this copy */
-	inst->capability = inst->hfi_inst->capability;
-
 	fs.buffer_type = HAL_BUFFER_INPUT;
 	fs.width = inst->out_width;
 	fs.height = inst->out_height;
@@ -1470,19 +1467,28 @@ static const struct hfi_inst_ops venc_hfi_ops = {
 
 static void venc_inst_init(struct vidc_inst *inst)
 {
+	struct hfi_device_inst *hfi_inst = inst->hfi_inst;
+	struct hal_session_init_done *caps = &hfi_inst->caps;
+
 	inst->fmt_cap = &venc_formats[2];
 	inst->fmt_out = &venc_formats[0];
 	inst->width = 1280;
 	inst->height = ALIGN(720, 32);
-	inst->capability.width.min = 64;
-	inst->capability.width.max = 1920;
-	inst->capability.height.min = 64;
-	inst->capability.height.max = ALIGN(1080, 32);
-	inst->capability.mbs_per_frame.min = 16;
-	inst->capability.mbs_per_frame.max = 8160;
 	inst->fps = 15;
 	inst->timeperframe.numerator = 1;
 	inst->timeperframe.denominator = 15;
+
+	caps->width.min = 64;
+	caps->width.max = 1920;
+	caps->width.step_size = 1;
+	caps->height.min = 64;
+	caps->height.max = ALIGN(1080, 32);
+	caps->height.step_size = 1;
+	caps->frame_rate.min = 1;
+	caps->frame_rate.max = 30;
+	caps->frame_rate.step_size = 1;
+	caps->mbs_per_frame.min = 16;
+	caps->mbs_per_frame.max = 8160;
 }
 
 int venc_init(struct vidc_core *core, struct video_device *enc)
@@ -1520,8 +1526,6 @@ int venc_open(struct vidc_inst *inst)
 	struct vb2_queue *q;
 	int ret;
 
-	venc_inst_init(inst);
-
 	ret = venc_ctrl_init(inst);
 	if (ret)
 		return ret;
@@ -1531,6 +1535,8 @@ int venc_open(struct vidc_inst *inst)
 		ret = PTR_ERR(inst->hfi_inst);
 		goto err_ctrl_deinit;
 	}
+
+	venc_inst_init(inst);
 
 	inst->vb2_ctx_cap = vb2_dma_sg_init_ctx(dev);
 	if (IS_ERR(inst->vb2_ctx_cap)) {

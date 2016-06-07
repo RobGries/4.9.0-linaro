@@ -178,7 +178,7 @@ vdec_try_fmt_common(struct vidc_inst *inst, struct v4l2_format *f)
 {
 	struct v4l2_pix_format_mplane *pixmp = &f->fmt.pix_mp;
 	struct v4l2_plane_pix_format *pfmt = pixmp->plane_fmt;
-	struct vidc_core_capability *cap = &inst->capability;
+	struct hal_session_init_done *cap = &inst->hfi_inst->caps;
 	const struct vidc_format *fmt;
 	unsigned int p;
 
@@ -602,7 +602,7 @@ static int vdec_enum_framesizes(struct file *file, void *fh,
 				struct v4l2_frmsizeenum *fsize)
 {
 	struct vidc_inst *inst = to_inst(file);
-	struct vidc_core_capability *caps = &inst->capability;
+	struct hal_session_init_done *cap = &inst->hfi_inst->caps;
 	const struct vidc_format *fmt;
 
 	fsize->type = V4L2_FRMSIZE_TYPE_STEPWISE;
@@ -619,12 +619,12 @@ static int vdec_enum_framesizes(struct file *file, void *fh,
 	if (fsize->index)
 		return -EINVAL;
 
-	fsize->stepwise.min_width = caps->width.min;
-	fsize->stepwise.max_width = caps->width.max;
-	fsize->stepwise.step_width = caps->width.step_size;
-	fsize->stepwise.min_height = caps->height.min;
-	fsize->stepwise.max_height = caps->height.max;
-	fsize->stepwise.step_height = caps->height.step_size;
+	fsize->stepwise.min_width = cap->width.min;
+	fsize->stepwise.max_width = cap->width.max;
+	fsize->stepwise.step_width = cap->width.step_size;
+	fsize->stepwise.min_height = cap->height.min;
+	fsize->stepwise.max_height = cap->height.max;
+	fsize->stepwise.step_height = cap->height.step_size;
 
 	return 0;
 }
@@ -633,7 +633,7 @@ static int vdec_enum_frameintervals(struct file *file, void *fh,
 				    struct v4l2_frmivalenum *fival)
 {
 	struct vidc_inst *inst = to_inst(file);
-	struct vidc_core_capability *caps = &inst->capability;
+	struct hal_session_init_done *cap = &inst->hfi_inst->caps;
 	const struct vidc_format *fmt;
 
 	fival->type = V4L2_FRMIVAL_TYPE_STEPWISE;
@@ -653,21 +653,21 @@ static int vdec_enum_frameintervals(struct file *file, void *fh,
 	if (!fival->width || !fival->height)
 		return -EINVAL;
 
-	if (fival->width > caps->width.max || fival->width < caps->width.min)
+	if (fival->width > cap->width.max || fival->width < cap->width.min)
 		return -EINVAL;
 
-	if (fival->height > caps->height.max ||
-	    fival->height < caps->height.min)
+	if (fival->height > cap->height.max ||
+	    fival->height < cap->height.min)
 		return -EINVAL;
 
 	fival->stepwise.min.numerator = 1;
-	fival->stepwise.min.denominator = caps->frame_rate.max;
+	fival->stepwise.min.denominator = cap->frame_rate.max;
 
 	fival->stepwise.max.numerator = 1;
-	fival->stepwise.max.denominator = caps->frame_rate.min;
+	fival->stepwise.max.denominator = cap->frame_rate.min;
 
 	fival->stepwise.step.numerator = 1;
-	fival->stepwise.step.denominator = 30;//caps->frame_rate.step_size;
+	fival->stepwise.step.denominator = 30;
 
 	return 0;
 }
@@ -731,9 +731,6 @@ static int vdec_init_session(struct vidc_inst *inst)
 		dev_err(dev, "%s: session init failed (%d)\n", __func__, ret);
 		return ret;
 	}
-
-	/* TODO: avoid this copy */
-	inst->capability = inst->hfi_inst->capability;
 
 	ptype = HAL_PARAM_FRAME_SIZE;
 	fs.buffer_type = HAL_BUFFER_INPUT;
@@ -1125,28 +1122,30 @@ static const struct hfi_inst_ops vdec_hfi_ops = {
 
 static void vdec_inst_init(struct vidc_inst *inst)
 {
+	struct hfi_device_inst *hfi_inst = inst->hfi_inst;
+	struct hal_session_init_done *caps = &hfi_inst->caps;
+
 	inst->fmt_out = &vdec_formats[6];
 	inst->fmt_cap = &vdec_formats[0];
 	inst->width = 1280;
 	inst->height = ALIGN(720, 32);
 	inst->out_width = 1280;
 	inst->out_height = 720;
-	inst->capability.height.min = MIN_SUPPORTED_HEIGHT;
-	inst->capability.height.max = DEFAULT_HEIGHT;
-	inst->capability.height.step_size = 1;
-	inst->capability.width.min = MIN_SUPPORTED_WIDTH;
-	inst->capability.width.max = DEFAULT_WIDTH;
-	inst->capability.width.step_size = 1;
-
-	inst->capability.frame_rate.min = 1;
-	inst->capability.frame_rate.max = 30;
-	inst->capability.frame_rate.step_size = 1;
-
-	inst->capability.mbs_per_frame.min = 16;
-	inst->capability.mbs_per_frame.max = 8160;
 	inst->fps = 30;
 	inst->timeperframe.numerator = 1;
 	inst->timeperframe.denominator = 30;
+
+	caps->width.min = MIN_SUPPORTED_WIDTH;
+	caps->width.max = DEFAULT_WIDTH;
+	caps->width.step_size = 1;
+	caps->height.min = MIN_SUPPORTED_HEIGHT;
+	caps->height.max = DEFAULT_HEIGHT;
+	caps->height.step_size = 1;
+	caps->frame_rate.min = 1;
+	caps->frame_rate.max = 30;
+	caps->frame_rate.step_size = 1;
+	caps->mbs_per_frame.min = 16;
+	caps->mbs_per_frame.max = 8160;
 }
 
 int vdec_init(struct vidc_core *core, struct video_device *dec)
@@ -1184,8 +1183,6 @@ int vdec_open(struct vidc_inst *inst)
 	struct vb2_queue *q;
 	int ret;
 
-	vdec_inst_init(inst);
-
 	ret = vdec_ctrl_init(inst);
 	if (ret)
 		return ret;
@@ -1195,6 +1192,8 @@ int vdec_open(struct vidc_inst *inst)
 		ret = PTR_ERR(inst->hfi_inst);
 		goto err_ctrl_deinit;
 	}
+
+	vdec_inst_init(inst);
 
 	inst->vb2_ctx_cap = vb2_dma_sg_init_ctx(dev);
 	if (IS_ERR(inst->vb2_ctx_cap)) {

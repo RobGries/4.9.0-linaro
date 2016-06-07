@@ -793,32 +793,18 @@ static void hfi_session_init_done(struct hfi_device *hfi,
 				  struct hfi_device_inst *inst, void *packet)
 {
 	struct hfi_msg_session_init_done_pkt *pkt = packet;
-	struct vidc_core_capability *cap = &inst->capability;
-	struct hal_session_init_done *init_done = &inst->caps;
+	struct hal_session_init_done *cap = &inst->caps;
 	enum hal_error error;
 
 	error = to_hal_error(pkt->error_type);
 	if (error != HAL_ERR_NONE)
 		goto done;
 
-	memset(init_done, 0, sizeof(*init_done));
+	memset(cap, 0, sizeof(*cap));
 
-	error = session_init_done_read_prop(hfi->dev, pkt, init_done);
+	error = session_init_done_read_prop(hfi->dev, pkt, cap);
 	if (error != HAL_ERR_NONE)
 		goto done;
-
-	cap->width = init_done->width;
-	cap->height = init_done->height;
-	cap->frame_rate = init_done->frame_rate;
-	cap->scale_x = init_done->scale_x;
-	cap->scale_y = init_done->scale_y;
-	cap->hier_p = init_done->hier_p;
-	cap->ltr_count = init_done->ltr_count;
-	cap->pixelprocess_caps = call_hfi_op(hfi, get_core_capabilities);
-	cap->mbs_per_frame = init_done->mbs_per_frame;
-	cap->buffer_mode_out = init_done->alloc_mode_out;
-	cap->secure_output2_threshold = init_done->secure_output2_threshold;
-	cap->capability_set = true;
 
 	dev_dbg(hfi->dev,
 		"width %u-%u (%u), height %u-%d (%u), framerate %u-%u (%u)\n",
