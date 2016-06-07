@@ -1118,9 +1118,6 @@ static int venus_hfi_core_init(struct hfi_device *hfi)
 
 	venus_set_state(hdev, VENUS_STATE_INIT);
 
-	dev_dbg(dev, "%s: exit  (power:%u, suspend:%u)\n", __func__,
-		hdev->power_enabled, hdev->suspended);
-
 	return 0;
 }
 
@@ -1128,11 +1125,7 @@ static int venus_hfi_core_deinit(struct hfi_device *hfi)
 {
 	struct venus_hfi_device *hdev = to_hfi_priv(hfi);
 
-	dev_dbg(hdev->dev, "%s: enter\n", __func__);
-
 	venus_set_state(hdev, VENUS_STATE_DEINIT);
-
-	dev_dbg(hdev->dev, "%s: exit\n", __func__);
 
 	return 0;
 }
