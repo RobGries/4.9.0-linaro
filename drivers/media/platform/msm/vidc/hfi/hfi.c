@@ -443,8 +443,8 @@ unlock:
 	return ret;
 }
 
-int vidc_hfi_session_release_res(struct hfi_device *hfi,
-				 struct hfi_device_inst *inst)
+int vidc_hfi_session_unload_res(struct hfi_device *hfi,
+				struct hfi_device_inst *inst)
 {
 	int ret;
 
@@ -510,9 +510,9 @@ int vidc_hfi_session_set_buffers(struct hfi_device *hfi,
 	return ret;
 }
 
-int vidc_hfi_session_release_buffers(struct hfi_device *hfi,
-				     struct hfi_device_inst *inst,
-				     struct hal_buffer_addr_info *bai)
+int vidc_hfi_session_unset_buffers(struct hfi_device *hfi,
+				   struct hfi_device_inst *inst,
+				   struct hal_buffer_addr_info *bai)
 {
 	int ret;
 

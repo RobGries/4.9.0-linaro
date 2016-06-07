@@ -19,7 +19,7 @@
 #include "internal_buffers.h"
 #include "load.h"
 
-static int vidc_set_session_buf(struct vb2_buffer *vb)
+static int session_set_buf(struct vb2_buffer *vb)
 {
 	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
 	struct vb2_queue *q = vb->vb2_queue;
@@ -74,7 +74,7 @@ static int vidc_set_session_buf(struct vb2_buffer *vb)
 	return 0;
 }
 
-static int vidc_rel_session_bufs(struct vidc_inst *inst)
+static int session_unset_bufs(struct vidc_inst *inst)
 {
 	struct device *dev = inst->core->dev;
 	struct hfi_device *hfi = &inst->core->hfi;
@@ -87,8 +87,7 @@ static int vidc_rel_session_bufs(struct vidc_inst *inst)
 		list_del(&bi->list);
 		bai = &bi->bai;
 		bai->response_required = 1;
-		ret = vidc_hfi_session_release_buffers(hfi, inst->hfi_inst,
-							bai);
+		ret = vidc_hfi_session_unset_buffers(hfi, inst->hfi_inst, bai);
 		if (ret) {
 			dev_err(dev, "%s: session release buffers failed\n",
 				__func__);
@@ -100,7 +99,7 @@ static int vidc_rel_session_bufs(struct vidc_inst *inst)
 	return ret;
 }
 
-static int vidc_set_session_bufs(struct vidc_inst *inst)
+static int session_set_bufs(struct vidc_inst *inst)
 {
 	struct device *dev = inst->core->dev;
 	struct hfi_device *hfi = &inst->core->hfi;
@@ -210,7 +209,7 @@ int vidc_bufrequirements(struct vidc_inst *inst, enum hal_buffer_type type,
 }
 
 struct vb2_v4l2_buffer *
-vidc_find_vb2_buf(struct vidc_inst *inst, dma_addr_t addr)
+vidc_vb2_find_buf(struct vidc_inst *inst, dma_addr_t addr)
 {
 	struct vidc_buffer *buf;
 	struct vb2_v4l2_buffer *vb = NULL;
@@ -313,7 +312,7 @@ void vidc_vb2_buf_queue(struct vb2_buffer *vb)
 	    !vb2_is_streaming(&inst->bufq_out))
 		return;
 
-	ret = vidc_set_session_buf(vb);
+	ret = session_set_buf(vb);
 	if (ret)
 		vb2_buffer_done(vb, VB2_BUF_STATE_ERROR);
 }
@@ -347,13 +346,13 @@ void vidc_vb2_stop_streaming(struct vb2_queue *q)
 		goto abort;
 	}
 
-	ret = vidc_hfi_session_release_res(hfi, inst->hfi_inst);
+	ret = vidc_hfi_session_unload_res(hfi, inst->hfi_inst);
 	if (ret) {
 		dev_err(dev, "session: release resources failed (%d)\n", ret);
 		goto abort;
 	}
 
-	ret = vidc_rel_session_bufs(inst);
+	ret = session_unset_bufs(inst);
 	if (ret) {
 		dev_err(dev, "failed to release capture buffers: %d\n", ret);
 		goto abort;
@@ -395,7 +394,7 @@ int vidc_vb2_start_streaming(struct vidc_inst *inst)
 	struct vidc_buffer *buf, *n;
 	int ret;
 
-	ret = vidc_set_session_bufs(inst);
+	ret = session_set_bufs(inst);
 	if (ret)
 		return ret;
 
@@ -419,7 +418,7 @@ int vidc_vb2_start_streaming(struct vidc_inst *inst)
 
 	mutex_lock(&inst->bufqueue_lock);
 	list_for_each_entry_safe(buf, n, &inst->bufqueue, list) {
-		ret = vidc_set_session_buf(&buf->vb.vb2_buf);
+		ret = session_set_buf(&buf->vb.vb2_buf);
 		if (ret)
 			break;
 	}

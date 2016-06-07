@@ -254,8 +254,7 @@ static int scratch_release_buffers(struct vidc_inst *inst, bool reuse)
 		bai.response_required = true;
 
 		mutex_unlock(&inst->scratchbufs.lock);
-		ret = vidc_hfi_session_release_buffers(hfi, inst->hfi_inst,
-							&bai);
+		ret = vidc_hfi_session_unset_buffers(hfi, inst->hfi_inst, &bai);
 		mutex_lock(&inst->scratchbufs.lock);
 
 		/* If scratch buffers can be reused, do not free the buffers */
@@ -292,8 +291,7 @@ static int persist_release_buffers(struct vidc_inst *inst)
 		bai.response_required = true;
 
 		mutex_unlock(&inst->persistbufs.lock);
-		ret = vidc_hfi_session_release_buffers(hfi, inst->hfi_inst,
-							&bai);
+		ret = vidc_hfi_session_unset_buffers(hfi, inst->hfi_inst, &bai);
 		mutex_lock(&inst->persistbufs.lock);
 
 		list_del(&buf->list);

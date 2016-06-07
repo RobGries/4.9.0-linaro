@@ -30,7 +30,7 @@ struct vidc_buffer {
 #define to_vidc_buffer(buf)	container_of(buf, struct vidc_buffer, vb)
 
 struct vb2_v4l2_buffer *
-vidc_find_vb2_buf(struct vidc_inst *inst, dma_addr_t addr);
+vidc_vb2_find_buf(struct vidc_inst *inst, dma_addr_t addr);
 int vidc_vb2_buf_init(struct vb2_buffer *vb);
 int vidc_vb2_buf_prepare(struct vb2_buffer *vb);
 void vidc_vb2_buf_queue(struct vb2_buffer *vb);
