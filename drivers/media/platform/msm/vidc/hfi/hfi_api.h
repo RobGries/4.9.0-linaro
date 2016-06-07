@@ -1281,6 +1281,9 @@ struct hfi_device_inst {
 	struct vidc_core_capability capability;
 	struct hal_session_init_done caps;
 
+	/* buffer requirements */
+	struct hal_buffer_requirements bufreq[HAL_BUFFER_MAX];
+
 	/* debug */
 	enum hal_property last_ptype;
 };

@@ -126,6 +126,7 @@ static int vidc_set_session_bufs(struct vidc_inst *inst)
 int vidc_get_bufreqs(struct vidc_inst *inst)
 {
 	struct hfi_device *hfi = &inst->core->hfi;
+	struct hfi_device_inst *hfi_inst = inst->hfi_inst;
 	struct device *dev = inst->core->dev;
 	enum hal_property ptype = HAL_PARAM_GET_BUFFER_REQUIREMENTS;
 	union hal_get_property hprop;
@@ -135,21 +136,21 @@ int vidc_get_bufreqs(struct vidc_inst *inst)
 	if (ret)
 		return ret;
 
-	memcpy(inst->bufreq, hprop.bufreq, sizeof(inst->bufreq));
+	memcpy(hfi_inst->bufreq, hprop.bufreq, sizeof(hfi_inst->bufreq));
 
 	for (i = 0; i < HAL_BUFFER_MAX; i++)
 		dev_dbg(dev,
 			"buftype: %03x, actual count: %02d, size: %d, "
 			"count min: %d, hold count: %d, region size: %d "
 			"contiguous: %u, alignment: %u\n",
-			inst->bufreq[i].type,
-			inst->bufreq[i].count_actual,
-			inst->bufreq[i].size,
-			inst->bufreq[i].count_min,
-			inst->bufreq[i].hold_count,
-			inst->bufreq[i].region_size,
-			inst->bufreq[i].contiguous,
-			inst->bufreq[i].alignment);
+			hfi_inst->bufreq[i].type,
+			hfi_inst->bufreq[i].count_actual,
+			hfi_inst->bufreq[i].size,
+			hfi_inst->bufreq[i].count_min,
+			hfi_inst->bufreq[i].hold_count,
+			hfi_inst->bufreq[i].region_size,
+			hfi_inst->bufreq[i].contiguous,
+			hfi_inst->bufreq[i].alignment);
 
 	return 0;
 }
@@ -157,11 +158,12 @@ int vidc_get_bufreqs(struct vidc_inst *inst)
 struct hal_buffer_requirements *
 vidc_get_buff_req_buffer(struct vidc_inst *inst, enum hal_buffer_type type)
 {
+	struct hfi_device_inst *hfi_inst = inst->hfi_inst;
 	unsigned int i;
 
 	for (i = 0; i < HAL_BUFFER_MAX; i++) {
-		if (inst->bufreq[i].type == type)
-			return &inst->bufreq[i];
+		if (hfi_inst->bufreq[i].type == type)
+			return &hfi_inst->bufreq[i];
 	}
 
 	return NULL;

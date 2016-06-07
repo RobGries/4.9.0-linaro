@@ -138,7 +138,6 @@ struct vidc_inst {
 	const struct vidc_format *fmt_cap;
 	unsigned int num_input_bufs;
 	unsigned int num_output_bufs;
-	struct hal_buffer_requirements bufreq[HAL_BUFFER_MAX];
 	struct vidc_core_capability capability;
 	bool in_reconfig;
 	u32 reconfig_width;
