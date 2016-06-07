@@ -1056,10 +1056,6 @@ struct hal_hybrid_hierp {
 	u32 layers;
 };
 
-struct buffer_requirements {
-	struct hal_buffer_requirements buffer[HAL_BUFFER_MAX];
-};
-
 union hal_get_property {
 	struct hal_framerate framerate;
 	struct hal_uncompressed_format_select format_select;
@@ -1113,7 +1109,7 @@ union hal_get_property {
 	struct hal_preserve_text_quality preserve_text_quality;
 	struct hal_buffer_info buffer_info;
 	struct hal_buffer_alloc_mode buffer_alloc_mode;
-	struct buffer_requirements buf_req;
+	struct hal_buffer_requirements bufreq[HAL_BUFFER_MAX];
 };
 
 /* HAL Response */

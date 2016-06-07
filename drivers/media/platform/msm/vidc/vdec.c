@@ -875,22 +875,21 @@ static int vdec_check_configuration(struct vidc_inst *inst)
 
 	if (inst->num_output_bufs < bufreq.count_actual ||
 	    inst->num_output_bufs < bufreq.count_min) {
-		dev_err(dev,
-			"%s: different output buffer expectation (%u - %u)\n",
-			__func__, inst->num_output_bufs, bufreq.count_actual);
+		dev_err(dev, "%s: output buffer expectation (%u - %u min %u)\n",
+			__func__, inst->num_output_bufs, bufreq.count_actual,
+			bufreq.count_min);
 		ret = -EINVAL;
 	}
 
-	memset(&bufreq, 0, sizeof(bufreq));
 	ret = vidc_bufrequirements(inst, HAL_BUFFER_INPUT, &bufreq);
 	if (ret)
 		return ret;
 
 	if (inst->num_input_bufs < bufreq.count_actual ||
 	    inst->num_input_bufs < bufreq.count_min) {
-		dev_err(dev,
-			"%s: different input buffer expectation (%u - %u)\n",
-			__func__, inst->num_output_bufs, bufreq.count_actual);
+		dev_err(dev, "%s: input buffer expectation (%u - %u min %u)\n",
+			__func__, inst->num_output_bufs, bufreq.count_actual,
+			bufreq.count_min);
 		ret = -EINVAL;
 	}
 

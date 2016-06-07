@@ -450,7 +450,7 @@ session_get_prop_profile_level(struct hfi_msg_session_property_info_pkt *pkt,
 static void
 session_get_prop_buf_req(struct device *dev,
 			 struct hfi_msg_session_property_info_pkt *pkt,
-			 struct buffer_requirements *buffreq)
+			 struct hal_buffer_requirements *bufreq)
 {
 	struct hfi_buffer_requirements *buf_req;
 	u32 req_bytes;
@@ -476,49 +476,48 @@ session_get_prop_buf_req(struct device *dev,
 
 		switch (buf_req->type) {
 		case HFI_BUFFER_INPUT:
-			memcpy(&buffreq->buffer[0], buf_req, sizeof(*buf_req));
-			buffreq->buffer[0].type = HAL_BUFFER_INPUT;
+			memcpy(&bufreq[0], buf_req, sizeof(*buf_req));
+			bufreq[0].type = HAL_BUFFER_INPUT;
 			break;
 		case HFI_BUFFER_OUTPUT:
-			memcpy(&buffreq->buffer[1], buf_req, sizeof(*buf_req));
-			buffreq->buffer[1].type = HAL_BUFFER_OUTPUT;
+			memcpy(&bufreq[1], buf_req, sizeof(*buf_req));
+			bufreq[1].type = HAL_BUFFER_OUTPUT;
 			break;
 		case HFI_BUFFER_OUTPUT2:
-			memcpy(&buffreq->buffer[2], buf_req, sizeof(*buf_req));
-			buffreq->buffer[2].type = HAL_BUFFER_OUTPUT2;
+			memcpy(&bufreq[2], buf_req, sizeof(*buf_req));
+			bufreq[2].type = HAL_BUFFER_OUTPUT2;
 			break;
 		case HFI_BUFFER_EXTRADATA_INPUT:
-			memcpy(&buffreq->buffer[3], buf_req, sizeof(*buf_req));
-			buffreq->buffer[3].type = HAL_BUFFER_EXTRADATA_INPUT;
+			memcpy(&bufreq[3], buf_req, sizeof(*buf_req));
+			bufreq[3].type = HAL_BUFFER_EXTRADATA_INPUT;
 			break;
 		case HFI_BUFFER_EXTRADATA_OUTPUT:
-			memcpy(&buffreq->buffer[4], buf_req, sizeof(*buf_req));
-			buffreq->buffer[4].type = HAL_BUFFER_EXTRADATA_OUTPUT;
+			memcpy(&bufreq[4], buf_req, sizeof(*buf_req));
+			bufreq[4].type = HAL_BUFFER_EXTRADATA_OUTPUT;
 			break;
 		case HFI_BUFFER_EXTRADATA_OUTPUT2:
-			memcpy(&buffreq->buffer[5], buf_req, sizeof(*buf_req));
-			buffreq->buffer[5].type = HAL_BUFFER_EXTRADATA_OUTPUT2;
+			memcpy(&bufreq[5], buf_req, sizeof(*buf_req));
+			bufreq[5].type = HAL_BUFFER_EXTRADATA_OUTPUT2;
 			break;
 		case HFI_BUFFER_INTERNAL_SCRATCH:
-			memcpy(&buffreq->buffer[6], buf_req, sizeof(*buf_req));
-			buffreq->buffer[6].type = HAL_BUFFER_INTERNAL_SCRATCH;
+			memcpy(&bufreq[6], buf_req, sizeof(*buf_req));
+			bufreq[6].type = HAL_BUFFER_INTERNAL_SCRATCH;
 			break;
 		case HFI_BUFFER_INTERNAL_SCRATCH_1:
-			memcpy(&buffreq->buffer[7], buf_req, sizeof(*buf_req));
-			buffreq->buffer[7].type = HAL_BUFFER_INTERNAL_SCRATCH_1;
+			memcpy(&bufreq[7], buf_req, sizeof(*buf_req));
+			bufreq[7].type = HAL_BUFFER_INTERNAL_SCRATCH_1;
 			break;
 		case HFI_BUFFER_INTERNAL_SCRATCH_2:
-			memcpy(&buffreq->buffer[8], buf_req, sizeof(*buf_req));
-			buffreq->buffer[8].type = HAL_BUFFER_INTERNAL_SCRATCH_2;
+			memcpy(&bufreq[8], buf_req, sizeof(*buf_req));
+			bufreq[8].type = HAL_BUFFER_INTERNAL_SCRATCH_2;
 			break;
 		case HFI_BUFFER_INTERNAL_PERSIST:
-			memcpy(&buffreq->buffer[9], buf_req, sizeof(*buf_req));
-			buffreq->buffer[9].type = HAL_BUFFER_INTERNAL_PERSIST;
+			memcpy(&bufreq[9], buf_req, sizeof(*buf_req));
+			bufreq[9].type = HAL_BUFFER_INTERNAL_PERSIST;
 			break;
 		case HFI_BUFFER_INTERNAL_PERSIST_1:
-			memcpy(&buffreq->buffer[10], buf_req, sizeof(*buf_req));
-			buffreq->buffer[10].type =
-				HAL_BUFFER_INTERNAL_PERSIST_1;
+			memcpy(&bufreq[10], buf_req, sizeof(*buf_req));
+			bufreq[10].type = HAL_BUFFER_INTERNAL_PERSIST_1;
 			break;
 		default:
 			/* bad buffer type */
@@ -546,8 +545,8 @@ static void hfi_session_prop_info(struct hfi_device *hfi,
 
 	switch (pkt->data[0]) {
 	case HFI_PROPERTY_CONFIG_BUFFER_REQUIREMENTS:
-		memset(&hprop->buf_req, 0, sizeof(hprop->buf_req));
-		session_get_prop_buf_req(dev, pkt, &hprop->buf_req);
+		memset(hprop->bufreq, 0, sizeof(hprop->bufreq));
+		session_get_prop_buf_req(dev, pkt, hprop->bufreq);
 		break;
 	case HFI_PROPERTY_PARAM_PROFILE_LEVEL_CURRENT:
 		memset(&hprop->profile_level, 0, sizeof(hprop->profile_level));

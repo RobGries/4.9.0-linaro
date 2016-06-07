@@ -135,27 +135,21 @@ int vidc_get_bufreqs(struct vidc_inst *inst)
 	if (ret)
 		return ret;
 
-	memcpy(&inst->buff_req, &hprop.buf_req, sizeof(inst->buff_req));
+	memcpy(inst->bufreq, hprop.bufreq, sizeof(inst->bufreq));
 
 	for (i = 0; i < HAL_BUFFER_MAX; i++)
 		dev_dbg(dev,
 			"buftype: %03x, actual count: %02d, size: %d, "
 			"count min: %d, hold count: %d, region size: %d "
 			"contiguous: %u, alignment: %u\n",
-			inst->buff_req.buffer[i].type,
-			inst->buff_req.buffer[i].count_actual,
-			inst->buff_req.buffer[i].size,
-			inst->buff_req.buffer[i].count_min,
-			inst->buff_req.buffer[i].hold_count,
-			inst->buff_req.buffer[i].region_size,
-			inst->buff_req.buffer[i].contiguous,
-			inst->buff_req.buffer[i].alignment);
-
-	dev_dbg(dev, "\n");
-
-	dev_dbg(dev, "Input buffers: %d, Output buffers: %d\n",
-		inst->buff_req.buffer[0].count_actual,
-		inst->buff_req.buffer[1].count_actual);
+			inst->bufreq[i].type,
+			inst->bufreq[i].count_actual,
+			inst->bufreq[i].size,
+			inst->bufreq[i].count_min,
+			inst->bufreq[i].hold_count,
+			inst->bufreq[i].region_size,
+			inst->bufreq[i].contiguous,
+			inst->bufreq[i].alignment);
 
 	return 0;
 }
@@ -166,8 +160,8 @@ vidc_get_buff_req_buffer(struct vidc_inst *inst, enum hal_buffer_type type)
 	unsigned int i;
 
 	for (i = 0; i < HAL_BUFFER_MAX; i++) {
-		if (inst->buff_req.buffer[i].type == type)
-			return &inst->buff_req.buffer[i];
+		if (inst->bufreq[i].type == type)
+			return &inst->bufreq[i];
 	}
 
 	return NULL;
@@ -182,6 +176,9 @@ int vidc_bufrequirements(struct vidc_inst *inst, enum hal_buffer_type type,
 	union hal_get_property hprop;
 	int ret, i;
 
+	if (out)
+		memset(out, 0, sizeof(*out));
+
 	ret = vidc_hfi_session_get_property(hfi, inst->hfi_inst, ptype, &hprop);
 	if (ret)
 		return ret;
@@ -189,11 +186,11 @@ int vidc_bufrequirements(struct vidc_inst *inst, enum hal_buffer_type type,
 	ret = -EINVAL;
 
 	for (i = 0; i < HAL_BUFFER_MAX; i++) {
-		if (hprop.buf_req.buffer[i].type != type)
+		if (hprop.bufreq[i].type != type)
 			continue;
 
 		if (out)
-			memcpy(out, &hprop.buf_req.buffer[i], sizeof(*out));
+			memcpy(out, &hprop.bufreq[i], sizeof(*out));
 		ret = 0;
 		break;
 	}
