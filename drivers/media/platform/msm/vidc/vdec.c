@@ -612,49 +612,6 @@ static int vdec_enum_framesizes(struct file *file, void *fh,
 	return 0;
 }
 
-static int vdec_enum_frameintervals(struct file *file, void *fh,
-				    struct v4l2_frmivalenum *fival)
-{
-	struct vidc_inst *inst = to_inst(file);
-	struct hal_session_init_done *cap = &inst->hfi_inst->caps;
-	const struct vidc_format *fmt;
-
-	fival->type = V4L2_FRMIVAL_TYPE_STEPWISE;
-
-	fmt = find_format(fival->pixel_format,
-			  V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
-	if (!fmt) {
-		fmt = find_format(fival->pixel_format,
-				  V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
-		if (!fmt)
-			return -EINVAL;
-	}
-
-	if (fival->index)
-		return -EINVAL;
-
-	if (!fival->width || !fival->height)
-		return -EINVAL;
-
-	if (fival->width > cap->width.max || fival->width < cap->width.min)
-		return -EINVAL;
-
-	if (fival->height > cap->height.max ||
-	    fival->height < cap->height.min)
-		return -EINVAL;
-
-	fival->stepwise.min.numerator = 1;
-	fival->stepwise.min.denominator = cap->frame_rate.max;
-
-	fival->stepwise.max.numerator = 1;
-	fival->stepwise.max.denominator = cap->frame_rate.min;
-
-	fival->stepwise.step.numerator = 1;
-	fival->stepwise.step.denominator = 30;
-
-	return 0;
-}
-
 static int vdec_subscribe_event(struct v4l2_fh *fh,
 				const struct v4l2_event_subscription *sub)
 {
@@ -693,7 +650,6 @@ static const struct v4l2_ioctl_ops vdec_ioctl_ops = {
 	.vidioc_s_parm = vdec_s_parm,
 	.vidioc_g_parm = vdec_g_parm,
 	.vidioc_enum_framesizes = vdec_enum_framesizes,
-//	.vidioc_enum_frameintervals = vdec_enum_frameintervals,
 	.vidioc_subscribe_event = vdec_subscribe_event,
 	.vidioc_unsubscribe_event = v4l2_event_unsubscribe,
 };
