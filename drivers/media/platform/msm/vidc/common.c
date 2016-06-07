@@ -380,11 +380,10 @@ abort:
 	if (ret)
 		dev_err(dev, "stop streaming failed type: %d, ret: %d\n",
 			q->type, ret);
-#if 1
+
 	ret = pm_runtime_put_sync(dev);
 	if (ret < 0)
 		dev_err(dev, "%s: pm_runtime_put_sync (%d)\n", __func__, ret);
-#endif
 }
 
 int vidc_vb2_start_streaming(struct vidc_inst *inst)

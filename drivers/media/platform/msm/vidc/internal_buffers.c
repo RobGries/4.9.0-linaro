@@ -335,10 +335,14 @@ int internal_bufs_alloc(struct vidc_inst *inst)
 	ret = persist_set_buffers(inst);
 	if (ret) {
 		dev_err(dev, "set persist buffers (%d)\n", ret);
-		return ret;
+		goto error;
 	}
 
 	return 0;
+
+error:
+	scratch_release_buffers(inst, false);
+	return ret;
 }
 
 int internal_bufs_free(struct vidc_inst *inst)
