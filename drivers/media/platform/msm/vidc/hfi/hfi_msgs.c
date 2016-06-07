@@ -539,8 +539,9 @@ static void hfi_session_prop_info(struct hfi_device *hfi,
 	inst->error = HAL_ERR_NONE;
 
 	if (!pkt->num_properties) {
+		inst->error = HAL_ERR_BAD_PARAM;
 		dev_err(dev, "%s: no properties\n", __func__);
-		return;
+		goto done;
 	}
 
 	switch (pkt->data[0]) {
@@ -558,6 +559,7 @@ static void hfi_session_prop_info(struct hfi_device *hfi,
 		return;
 	}
 
+done:
 	complete(&inst->done);
 }
 

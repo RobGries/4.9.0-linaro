@@ -583,8 +583,13 @@ int vidc_hfi_session_get_property(struct hfi_device *hfi,
 		goto unlock;
 	}
 
-	*hprop = inst->hprop;
+	if (inst->error != HAL_ERR_NONE) {
+		ret = -EINVAL;
+		goto unlock;
+	}
+
 	ret = 0;
+	*hprop = inst->hprop;
 unlock:
 	mutex_unlock(&inst->lock);
 
