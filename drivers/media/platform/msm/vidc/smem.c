@@ -37,7 +37,6 @@ static int alloc_dma_mem(struct device *dev, size_t size, u32 align,
 
 	mem->size = size;
 	mem->kvaddr = NULL;
-	mem->smem_priv = NULL;
 
 	mem->iommu_dev = dev;
 	if (IS_ERR(mem->iommu_dev))
@@ -81,8 +80,11 @@ static void free_dma_mem(struct smem *mem)
 	kfree(mem->sgt);
 }
 
-static int sync_dma_cache(struct smem *mem, enum smem_cache_ops cache_op)
+int smem_dma_sync_cache(struct smem *mem, enum smem_cache_ops cache_op)
 {
+	if (!mem)
+		return -EINVAL;
+
 	if (cache_op == SMEM_CACHE_CLEAN) {
 		dma_sync_sg_for_device(mem->iommu_dev, mem->sgt->sgl,
 				       mem->sgt->nents, DMA_TO_DEVICE);
@@ -97,14 +99,6 @@ static int sync_dma_cache(struct smem *mem, enum smem_cache_ops cache_op)
 	}
 
 	return 0;
-}
-
-int smem_cache_operations(struct smem *mem, enum smem_cache_ops cache_op)
-{
-	if (!mem)
-		return -EINVAL;
-
-	return sync_dma_cache(mem, cache_op);
 }
 
 struct smem *smem_alloc(struct device *dev, size_t size, u32 align,

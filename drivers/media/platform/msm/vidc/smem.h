@@ -31,7 +31,6 @@ struct smem {
 	size_t size;
 	void *kvaddr;
 	dma_addr_t da;
-	void *smem_priv;
 	struct dma_attrs attrs;
 	struct device *iommu_dev;
 	struct sg_table *sgt;
@@ -41,6 +40,6 @@ struct smem *smem_alloc(struct device *dev, size_t size, u32 align,
 			int map_kernel);
 void smem_free(struct smem *mem);
 
-int smem_cache_operations(struct smem *mem, enum smem_cache_ops);
+int smem_dma_sync_cache(struct smem *mem, enum smem_cache_ops);
 
 #endif /* __VIDC_SMEM_H__ */
