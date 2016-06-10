@@ -58,10 +58,6 @@ static int internal_set_buf_on_fw(struct vidc_inst *inst,
 	struct hal_buffer_addr_info bai = {0};
 	int ret;
 
-	ret = smem_cache_operations(mem, SMEM_CACHE_CLEAN);
-	if (ret)
-		dev_warn(dev, "Failed to clean cache. May cause undefined behavior\n");
-
 	bai.buffer_size = mem->size;
 	bai.buffer_type = buffer_type;
 	bai.num_buffers = 1;
