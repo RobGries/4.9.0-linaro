@@ -1147,7 +1147,7 @@ static int venc_check_configuration(struct vidc_inst *inst)
 	if (inst->num_input_bufs < bufreq.count_actual ||
 	    inst->num_input_bufs < bufreq.count_min) {
 		dev_err(dev, "%s: input buffer expectation (%u - %u min %u)\n",
-			__func__, inst->num_output_bufs, bufreq.count_actual,
+			__func__, inst->num_input_bufs, bufreq.count_actual,
 			bufreq.count_min);
 		ret = -EINVAL;
 	}
