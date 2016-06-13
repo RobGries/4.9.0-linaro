@@ -199,7 +199,7 @@ static int venus_write_queue(struct venus_hfi_device *hdev,
 			     void *packet, u32 *rx_req)
 {
 	struct hfi_queue_header *qhdr;
-	u32 pkt_size_in_words, new_wr_idx;
+	u32 dwords, new_wr_idx;
 	u32 empty_space, rd_idx, wr_idx;
 	u32 *wr_ptr;
 
@@ -212,8 +212,8 @@ static int venus_write_queue(struct venus_hfi_device *hdev,
 
 	venus_dump_packet(hdev, packet);
 
-	pkt_size_in_words = (*(u32 *)packet) >> 2;
-	if (!pkt_size_in_words)
+	dwords = (*(u32 *)packet) >> 2;
+	if (!dwords)
 		return -EINVAL;
 
 	rd_idx = qhdr->read_idx;
@@ -227,7 +227,7 @@ static int venus_write_queue(struct venus_hfi_device *hdev,
 	else
 		empty_space = rd_idx - wr_idx;
 
-	if (empty_space <= pkt_size_in_words) {
+	if (empty_space <= dwords) {
 		qhdr->tx_req = 1;
 		/* ensure tx_req is updated in memory */
 		wmb();
@@ -238,15 +238,15 @@ static int venus_write_queue(struct venus_hfi_device *hdev,
 	/* ensure tx_req is updated in memory */
 	wmb();
 
-	new_wr_idx = wr_idx + pkt_size_in_words;
+	new_wr_idx = wr_idx + dwords;
 	wr_ptr = (u32 *)(queue->qmem.kva + (wr_idx << 2));
 	if (new_wr_idx < qhdr->q_size) {
-		memcpy(wr_ptr, packet, pkt_size_in_words << 2);
+		memcpy(wr_ptr, packet, dwords << 2);
 	} else {
 		size_t len;
 
 		new_wr_idx -= qhdr->q_size;
-		len = (pkt_size_in_words - new_wr_idx) << 2;
+		len = (dwords - new_wr_idx) << 2;
 		memcpy(wr_ptr, packet, len);
 		memcpy(queue->qmem.kva, packet + len, new_wr_idx << 2);
 	}
@@ -264,12 +264,13 @@ static int venus_write_queue(struct venus_hfi_device *hdev,
 }
 
 static int venus_read_queue(struct venus_hfi_device *hdev,
-			    struct iface_queue *queue, u8 *packet, u32 *tx_req)
+			    struct iface_queue *queue, void *pkt, u32 *tx_req)
 {
 	struct hfi_queue_header *qhdr;
-	u32 pkt_size_in_words, new_rd_idx;
+	u32 dwords, new_rd_idx;
+	u32 rd_idx, wr_idx, type, qsize;
 	u32 *rd_ptr;
-	u32 receive_request = 0;
+	u32 recv_request = 0;
 	int ret = 0;
 
 	if (!queue->qmem.kva)
@@ -279,7 +280,12 @@ static int venus_read_queue(struct venus_hfi_device *hdev,
 	if (!qhdr)
 		return -EINVAL;
 
-	/* make sure data is valid before reading it */
+	type = qhdr->type;
+	rd_idx = qhdr->read_idx;
+	wr_idx = qhdr->write_idx;
+	qsize = qhdr->q_size;
+
+	/* make sure data is valid before using it */
 	rmb();
 
 	/*
@@ -289,33 +295,34 @@ static int venus_read_queue(struct venus_hfi_device *hdev,
 	 * emptied out for every interrupt from Venus. Venus will anyway
 	 * generates interrupt if it is full.
 	 */
-	if (qhdr->type & HFI_CTRL_TO_HOST_MSG_Q)
-		receive_request = 1;
+	if (type & HFI_CTRL_TO_HOST_MSG_Q)
+		recv_request = 1;
 
-	if (qhdr->read_idx == qhdr->write_idx) {
-		qhdr->rx_req = receive_request;
+	if (rd_idx == wr_idx) {
+		qhdr->rx_req = recv_request;
 		*tx_req = 0;
+		/* update rx_req field in memory */
 		wmb();
 		return -ENODATA;
 	}
 
-	rd_ptr = (u32 *)(queue->qmem.kva + (qhdr->read_idx << 2));
-	pkt_size_in_words = *rd_ptr >> 2;
-	if (!pkt_size_in_words)
+	rd_ptr = (u32 *)(queue->qmem.kva + (rd_idx << 2));
+	dwords = *rd_ptr >> 2;
+	if (!dwords)
 		return -EINVAL;
 
-	new_rd_idx = qhdr->read_idx + pkt_size_in_words;
-	if (((pkt_size_in_words << 2) <= VIDC_IFACEQ_VAR_HUGE_PKT_SIZE) &&
-	    qhdr->read_idx <= qhdr->q_size) {
-		if (new_rd_idx < qhdr->q_size) {
-			memcpy(packet, rd_ptr, pkt_size_in_words << 2);
+	new_rd_idx = rd_idx + dwords;
+	if (((dwords << 2) <= VIDC_IFACEQ_VAR_HUGE_PKT_SIZE) &&
+	    rd_idx <= qsize) {
+		if (new_rd_idx < qsize) {
+			memcpy(pkt, rd_ptr, dwords << 2);
 		} else {
 			size_t len;
 
-			new_rd_idx -= qhdr->q_size;
-			len = (pkt_size_in_words - new_rd_idx) << 2;
-			memcpy(packet, rd_ptr, len);
-			memcpy(packet + len, queue->qmem.kva, new_rd_idx << 2);
+			new_rd_idx -= qsize;
+			len = (dwords - new_rd_idx) << 2;
+			memcpy(pkt, rd_ptr, len);
+			memcpy(pkt + len, queue->qmem.kva, new_rd_idx << 2);
 		}
 	} else {
 		/* bad packet received, dropping */
@@ -323,18 +330,23 @@ static int venus_read_queue(struct venus_hfi_device *hdev,
 		ret = -EBADMSG;
 	}
 
+	/* ensure the packet is read before updating read index */
+	rmb();
+
 	qhdr->read_idx = new_rd_idx;
+	/* ensure updating read index */
+	wmb();
 
 	if (qhdr->read_idx != qhdr->write_idx)
 		qhdr->rx_req = 0;
 	else
-		qhdr->rx_req = receive_request;
+		qhdr->rx_req = recv_request;
 
 	*tx_req = qhdr->tx_req ? 1 : 0;
 
 	mb();
 
-	venus_dump_packet(hdev, packet);
+	venus_dump_packet(hdev, pkt);
 
 	return ret;
 }
@@ -342,9 +354,7 @@ static int venus_read_queue(struct venus_hfi_device *hdev,
 static int venus_alloc(struct venus_hfi_device *hdev, struct mem_desc *desc,
 		       u32 size, u32 align)
 {
-	struct device *dev = hdev->dev;
 	struct smem *smem;
-	int ret;
 
 	smem = smem_alloc(hdev->dev, size, align, 1);
 	if (IS_ERR(smem))
@@ -416,13 +426,6 @@ static int venus_iface_cmdq_write_nolock(struct venus_hfi_device *hdev,
 		dev_err(dev, "write to iface cmd queue failed (%d)\n", ret);
 		return ret;
 	}
-
-	if (!rx_req)
-		dev_err(hdev->dev,
-		"cmdq_wr: rx_req:%d pkt_type:%x (idx: rd:%u wr:%u)\n", rx_req,
-			hdev->last_packet_type,
-			queue->qhdr->read_idx,
-			queue->qhdr->write_idx);
 
 	if (rx_req)
 		venus_soft_int(hdev);
@@ -648,13 +651,6 @@ static int venus_iface_msgq_read_nolock(struct venus_hfi_device *hdev,
 	if (ret)
 		return ret;
 
-	if (0 && !tx_req) {
-		struct hfi_pkt_hdr *hdr = pkt;
-
-		dev_err(hdev->dev, "msgq_rd: tx_req:%d pkt_type:%x\n", tx_req,
-			hdr->pkt_type);
-	}
-
 	if (tx_req)
 		venus_soft_int(hdev);
 
@@ -742,11 +738,10 @@ static void venus_interface_queues_release(struct venus_hfi_device *hdev)
 static int venus_interface_queues_init(struct venus_hfi_device *hdev)
 {
 	struct hfi_queue_table_header *tbl_hdr;
-	struct hfi_queue_header *hdr;
 	struct iface_queue *queue;
 	struct hfi_sfr *sfr;
-	struct mem_desc desc;
-	unsigned int offset = 0;
+	struct mem_desc desc = {0};
+	unsigned int offset;
 	unsigned int i;
 	int ret;
 
@@ -758,7 +753,7 @@ static int venus_interface_queues_init(struct venus_hfi_device *hdev)
 	hdev->ifaceq_table.da = desc.da;
 	hdev->ifaceq_table.size = IFACEQ_TABLE_SIZE;
 	hdev->ifaceq_table.smem = desc.smem;
-	offset += hdev->ifaceq_table.size;
+	offset = hdev->ifaceq_table.size;
 
 	for (i = 0; i < IFACEQ_NUM; i++) {
 		queue = &hdev->queues[i];
@@ -769,17 +764,17 @@ static int venus_interface_queues_init(struct venus_hfi_device *hdev)
 		offset += queue->qmem.size;
 		queue->qhdr =
 			IFACEQ_GET_QHDR_START_ADDR(hdev->ifaceq_table.kva, i);
-		venus_set_qhdr_defaults(queue->qhdr);
-	}
 
-	ret = venus_alloc(hdev, &desc, ALIGNED_SFR_SIZE, 1);
-	if (ret) {
-		hdev->sfr.da = 0;
-	} else {
-		hdev->sfr.da = desc.da;
-		hdev->sfr.kva = desc.kva;
-		hdev->sfr.size = ALIGNED_SFR_SIZE;
-		hdev->sfr.smem = desc.smem;
+		venus_set_qhdr_defaults(queue->qhdr);
+
+		queue->qhdr->start_addr = queue->qmem.da;
+
+		if (i == IFACEQ_CMD_IDX)
+			queue->qhdr->type |= HFI_HOST_TO_CTRL_CMD_Q;
+		else if (i == IFACEQ_MSG_IDX)
+			queue->qhdr->type |= HFI_CTRL_TO_HOST_MSG_Q;
+		else if (i == IFACEQ_DBG_IDX)
+			queue->qhdr->type |= HFI_CTRL_TO_HOST_DEBUG_Q;
 	}
 
 	tbl_hdr = hdev->ifaceq_table.kva;
@@ -790,29 +785,27 @@ static int venus_interface_queues_init(struct venus_hfi_device *hdev)
 	tbl_hdr->num_q = IFACEQ_NUM;
 	tbl_hdr->num_active_q = IFACEQ_NUM;
 
-	queue = &hdev->queues[IFACEQ_CMD_IDX];
-	hdr = queue->qhdr;
-	hdr->start_addr = queue->qmem.da;
-	hdr->type |= HFI_HOST_TO_CTRL_CMD_Q;
-
-	queue = &hdev->queues[IFACEQ_MSG_IDX];
-	hdr = queue->qhdr;
-	hdr->start_addr = queue->qmem.da;
-	hdr->type |= HFI_CTRL_TO_HOST_MSG_Q;
-
-	queue = &hdev->queues[IFACEQ_DBG_IDX];
-	hdr = queue->qhdr;
-	hdr->start_addr = queue->qmem.da;
-	hdr->type |= HFI_CTRL_TO_HOST_DEBUG_Q;
-
 	/*
 	 * Set receive request to zero on debug queue as there is no
 	 * need of interrupt from video hardware for debug messages
 	 */
-	hdr->rx_req = 0;
+	queue = &hdev->queues[IFACEQ_DBG_IDX];
+	queue->qhdr->rx_req = 0;
 
-	sfr = hdev->sfr.kva;
-	sfr->buf_size = ALIGNED_SFR_SIZE;
+	ret = venus_alloc(hdev, &desc, ALIGNED_SFR_SIZE, 1);
+	if (ret) {
+		hdev->sfr.da = 0;
+	} else {
+		hdev->sfr.da = desc.da;
+		hdev->sfr.kva = desc.kva;
+		hdev->sfr.size = ALIGNED_SFR_SIZE;
+		hdev->sfr.smem = desc.smem;
+		sfr = hdev->sfr.kva;
+		sfr->buf_size = ALIGNED_SFR_SIZE;
+	}
+
+	/* ensure table and queue header structs are settled in memory */
+	wmb();
 
 	return 0;
 }
@@ -1089,7 +1082,7 @@ static irqreturn_t venus_isr(int irq, struct hfi_device *hfi)
 	if (status & VIDC_WRAPPER_INTR_STATUS_A2H_BMSK ||
 	    status & VIDC_WRAPPER_INTR_STATUS_A2HWD_BMSK ||
 	    status & VIDC_CPU_CS_SCIACMDARG0_HFI_CTRL_INIT_IDLE_MSG_BMSK)
-		hdev->intr_status |= status;
+		hdev->intr_status = status;
 
 	venus_writel(hdev, VIDC_CPU_CS_A2HSOFTINTCLR, 1);
 	venus_writel(hdev, VIDC_WRAPPER_INTR_CLEAR, status);
