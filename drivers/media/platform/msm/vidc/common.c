@@ -423,9 +423,11 @@ int vidc_vb2_start_streaming(struct vidc_inst *inst)
 	}
 	mutex_unlock(&inst->bufqueue_lock);
 
-	mutex_lock(&inst->lock);
-	inst->streamon = 1;
-	mutex_unlock(&inst->lock);
+	if (!ret) {
+		mutex_lock(&inst->lock);
+		inst->streamon = 1;
+		mutex_unlock(&inst->lock);
+	}
 
 	return ret;
 }
