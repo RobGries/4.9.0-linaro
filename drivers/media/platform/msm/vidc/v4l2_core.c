@@ -299,16 +299,12 @@ const struct v4l2_file_operations vidc_fops = {
 
 static irqreturn_t vidc_isr_thread(int irq, void *dev_id)
 {
-	struct hfi_device *hfi = dev_id;
-
-	return call_hfi_op(hfi, isr_thread, irq, hfi);
+	return vidc_hfi_isr_thread(irq, dev_id);
 }
 
 static irqreturn_t vidc_isr(int irq, void *dev)
 {
-	struct hfi_device *hfi = dev;
-
-	return call_hfi_op(hfi, isr, irq, hfi);
+	return vidc_hfi_isr(irq, dev);
 }
 
 static const struct of_device_id vidc_dt_match[] = {
@@ -530,23 +526,6 @@ static int vidc_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int vidc_pm_suspend(struct device *dev)
-{
-	struct vidc_core *core = dev_get_drvdata(dev);
-
-	if (!core)
-		return -EINVAL;
-
-	return vidc_hfi_core_suspend(&core->hfi);
-}
-
-static int vidc_pm_resume(struct device *dev)
-{
-	struct vidc_core *core = dev_get_drvdata(dev);
-
-	return vidc_hfi_core_resume(&core->hfi);
-}
-
 static int vidc_runtime_suspend(struct device *dev)
 {
 	struct vidc_core *core = dev_get_drvdata(dev);
@@ -585,6 +564,16 @@ static int vidc_runtime_resume(struct device *dev)
 	dev_dbg(dev, "%s: exit (%d)\n", __func__, ret);
 
 	return ret;
+}
+
+static int vidc_pm_suspend(struct device *dev)
+{
+	return vidc_runtime_suspend(dev);
+}
+
+static int vidc_pm_resume(struct device *dev)
+{
+	return vidc_runtime_resume(dev);
 }
 
 static const struct dev_pm_ops vidc_pm_ops = {
