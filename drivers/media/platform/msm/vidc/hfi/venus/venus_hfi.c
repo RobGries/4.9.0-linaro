@@ -200,7 +200,7 @@ static int venus_write_queue(struct venus_hfi_device *hdev,
 {
 	struct hfi_queue_header *qhdr;
 	u32 dwords, new_wr_idx;
-	u32 empty_space, rd_idx, wr_idx;
+	u32 empty_space, rd_idx, wr_idx, qsize;
 	u32 *wr_ptr;
 
 	if (!queue->qmem.kva)
@@ -218,12 +218,12 @@ static int venus_write_queue(struct venus_hfi_device *hdev,
 
 	rd_idx = qhdr->read_idx;
 	wr_idx = qhdr->write_idx;
-
+	qsize = qhdr->q_size;
 	/* ensure rd/wr indices's are read from memory */
 	rmb();
 
 	if (wr_idx >= rd_idx)
-		empty_space = qhdr->q_size - (wr_idx - rd_idx);
+		empty_space = qsize - (wr_idx - rd_idx);
 	else
 		empty_space = rd_idx - wr_idx;
 
@@ -240,12 +240,12 @@ static int venus_write_queue(struct venus_hfi_device *hdev,
 
 	new_wr_idx = wr_idx + dwords;
 	wr_ptr = (u32 *)(queue->qmem.kva + (wr_idx << 2));
-	if (new_wr_idx < qhdr->q_size) {
+	if (new_wr_idx < qsize) {
 		memcpy(wr_ptr, packet, dwords << 2);
 	} else {
 		size_t len;
 
-		new_wr_idx -= qhdr->q_size;
+		new_wr_idx -= qsize;
 		len = (dwords - new_wr_idx) << 2;
 		memcpy(wr_ptr, packet, len);
 		memcpy(queue->qmem.kva, packet + len, new_wr_idx << 2);
@@ -337,7 +337,12 @@ static int venus_read_queue(struct venus_hfi_device *hdev,
 	/* ensure updating read index */
 	wmb();
 
-	if (qhdr->read_idx != qhdr->write_idx)
+	rd_idx = qhdr->read_idx;
+	wr_idx = qhdr->write_idx;
+	/* ensure rd/wr indices are read from memory */
+	rmb();
+
+	if (rd_idx != wr_idx)
 		qhdr->rx_req = 0;
 	else
 		qhdr->rx_req = recv_request;
