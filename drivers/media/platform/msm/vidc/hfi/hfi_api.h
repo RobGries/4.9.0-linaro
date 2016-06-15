@@ -1399,5 +1399,7 @@ int vidc_hfi_session_etb(struct hfi_device *hfi, struct hfi_device_inst *inst,
 			 struct hal_frame_data *fdata);
 int vidc_hfi_session_ftb(struct hfi_device *hfi, struct hfi_device_inst *inst,
 			 struct hal_frame_data *fdata);
+irqreturn_t vidc_hfi_isr_thread(int irq, void *dev_id);
+irqreturn_t vidc_hfi_isr(int irq, void *dev);
 
 #endif

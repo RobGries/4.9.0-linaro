@@ -630,6 +630,20 @@ int vidc_hfi_session_ftb(struct hfi_device *hfi, struct hfi_device_inst *inst,
 	return call_hfi_op(hfi, session_ftb, inst, fdata);
 }
 
+irqreturn_t vidc_hfi_isr_thread(int irq, void *dev_id)
+{
+	struct hfi_device *hfi = dev_id;
+
+	return call_hfi_op(hfi, isr_thread, irq, hfi);
+}
+
+irqreturn_t vidc_hfi_isr(int irq, void *dev)
+{
+	struct hfi_device *hfi = dev;
+
+	return call_hfi_op(hfi, isr, irq, hfi);
+}
+
 int vidc_hfi_create(struct hfi_device *hfi, struct vidc_resources *res)
 {
 	const char *hfi_version = res->hfi_version;
