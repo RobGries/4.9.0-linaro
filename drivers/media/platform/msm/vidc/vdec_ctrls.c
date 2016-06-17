@@ -138,15 +138,12 @@ static const struct v4l2_ctrl_ops vdec_ctrl_ops = {
 
 int vdec_ctrl_init(struct vidc_inst *inst)
 {
-	struct device *dev = inst->core->dev;
 	unsigned int i;
 	int ret;
 
 	ret = v4l2_ctrl_handler_init(&inst->ctrl_handler, NUM_CTRLS);
-	if (ret) {
-		dev_err(dev, "control handler init (%d)\n", ret);
+	if (ret)
 		return ret;
-	}
 
 	for (i = 0; i < NUM_CTRLS; i++) {
 		struct v4l2_ctrl *ctrl;
@@ -168,11 +165,8 @@ int vdec_ctrl_init(struct vidc_inst *inst)
 					vdec_ctrls[i].def);
 		}
 
-		if (!ctrl) {
-			dev_err(dev, "invalid ctrl (id:%x, name:%s)\n",
-				vdec_ctrls[i].id, vdec_ctrls[i].name);
+		if (!ctrl)
 			return -EINVAL;
-		}
 
 		switch (vdec_ctrls[i].id) {
 		case V4L2_CID_MPEG_VIDEO_MPEG4_PROFILE:
@@ -187,8 +181,6 @@ int vdec_ctrl_init(struct vidc_inst *inst)
 		ret = inst->ctrl_handler.error;
 		if (ret) {
 			v4l2_ctrl_handler_free(&inst->ctrl_handler);
-			dev_err(dev, "adding ctrl (%s) to ctrl handle (%d)\n",
-				vdec_ctrls[i].name, ret);
 			return ret;
 		}
 	}

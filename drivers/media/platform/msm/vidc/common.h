@@ -18,7 +18,7 @@
 #include <linux/list.h>
 #include <media/videobuf2-v4l2.h>
 
-#include "internal.h"
+#include "core.h"
 
 struct vidc_buffer {
 	struct vb2_v4l2_buffer vb;

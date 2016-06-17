@@ -1,14 +1,14 @@
 # Makefile for Qualcomm vidc driver
 
 vidc-objs += \
-		v4l2_core.o \
-		internal_buffers.o \
+		core.o \
+		int_bufs.o \
 		common.o \
 		vdec.o \
 		vdec_ctrls.o \
 		venc.o \
 		venc_ctrls.o \
-		smem.o \
+		mem.o \
 		resources.o \
 		load.o \
 		hfi/venus/venus_hfi.o \

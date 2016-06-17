@@ -15,7 +15,7 @@
 
 #include <linux/clk.h>
 
-#include "internal.h"
+#include "core.h"
 #include "load.h"
 
 static u32 get_inst_load(struct vidc_inst *inst)

@@ -22,17 +22,18 @@
 
 #include "venus_hfi.h"
 #include "venus_hfi_io.h"
-#include "smem.h"
+#include "mem.h"
 #include "hfi/hfi_cmds.h"
+#include "hfi/hfi_msgs.h"
 
 #define HFI_MASK_QHDR_TX_TYPE		0xff000000
 #define HFI_MASK_QHDR_RX_TYPE		0x00ff0000
 #define HFI_MASK_QHDR_PRI_TYPE		0x0000ff00
-#define HFI_MASK_QHDR_Q_ID_TYPE		0x000000ff
+#define HFI_MASK_QHDR_ID_TYPE		0x000000ff
 
 #define HFI_HOST_TO_CTRL_CMD_Q		0
 #define HFI_CTRL_TO_HOST_MSG_Q		1
-#define HFI_CTRL_TO_HOST_DEBUG_Q	2
+#define HFI_CTRL_TO_HOST_DBG_Q		2
 #define HFI_MASK_QHDR_STATUS		0x000000ff
 
 #define IFACEQ_NUM			3
@@ -75,19 +76,6 @@ struct hfi_queue_header {
 	u32 read_idx;
 	u32 write_idx;
 };
-
-#if 0
-						Bytes
-	-- tbl header         -- |		24
-	-- queue header cmd   -- |		56
-	-- queue header msg   -- | table size	56
-	-- queue header dbg   -- |		56
-	--
-	-- 1024 * 50 * 16 cmd -- |		819200
-	-- 1024 * 50 * 16 msg -- | queue size	819200
-	-- 1024 * 50 * 16 dbg -- |		819200
-						2457792 Bytes (2461696)
-#endif
 
 #define IFACEQ_TABLE_SIZE	\
 	(sizeof(struct hfi_queue_table_header) +	\
@@ -779,7 +767,7 @@ static int venus_interface_queues_init(struct venus_hfi_device *hdev)
 		else if (i == IFACEQ_MSG_IDX)
 			queue->qhdr->type |= HFI_CTRL_TO_HOST_MSG_Q;
 		else if (i == IFACEQ_DBG_IDX)
-			queue->qhdr->type |= HFI_CTRL_TO_HOST_DEBUG_Q;
+			queue->qhdr->type |= HFI_CTRL_TO_HOST_DBG_Q;
 	}
 
 	tbl_hdr = hdev->ifaceq_table.kva;

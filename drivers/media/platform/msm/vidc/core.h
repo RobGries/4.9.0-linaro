@@ -21,11 +21,6 @@
 #include "hfi/hfi_api.h"
 
 #define VIDC_DRV_NAME		"vidc"
-#define DEFAULT_HEIGHT		1088
-#define DEFAULT_WIDTH		1920
-#define MIN_SUPPORTED_WIDTH	64
-#define MIN_SUPPORTED_HEIGHT	64
-#define MAX_NAME_LENGTH		64
 
 struct vidc_list {
 	struct list_head list;
@@ -149,7 +144,6 @@ struct vidc_inst {
 
 struct vidc_ctrl {
 	u32 id;
-	char name[MAX_NAME_LENGTH];
 	enum v4l2_ctrl_type type;
 	s32 min;
 	s32 max;
@@ -165,18 +159,20 @@ struct buffer_info {
 	struct hal_buffer_addr_info bai;
 };
 
+/*
+ * Offset base for buffers on the destination queue - used to distinguish
+ * between source and destination buffers when mmapping - they receive the same
+ * offsets but for different queues
+ */
+#define DST_QUEUE_OFF_BASE	(1 << 30)
+
+extern const struct v4l2_file_operations vidc_fops;
+
 static inline void INIT_VIDC_LIST(struct vidc_list *mlist)
 {
 	mutex_init(&mlist->lock);
 	INIT_LIST_HEAD(&mlist->list);
 }
-
-/* Offset base for buffers on the destination queue - used to distinguish
- * between source and destination buffers when mmapping - they receive the same
- * offsets but for different queues */
-#define DST_QUEUE_OFF_BASE	(1 << 30)
-
-extern const struct v4l2_file_operations vidc_fops;
 
 static inline struct vidc_inst *to_inst(struct file *filp)
 {

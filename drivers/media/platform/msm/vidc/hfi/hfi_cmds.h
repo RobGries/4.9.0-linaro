@@ -33,12 +33,12 @@ struct hfi_packetization_ops {
 	int (*sys_set_resource)(struct hfi_sys_set_resource_pkt *pkt,
 				struct hal_resource_hdr *resource_hdr,
 				void *resource_value);
+	int (*sys_release_resource)(struct hfi_sys_release_resource_pkt *pkt,
+				    struct hal_resource_hdr *resource_hdr);
 	void (*sys_debug_config)(struct hfi_sys_set_property_pkt *pkt, u32 mode,
 				 u32 config);
 	void (*sys_coverage_config)(struct hfi_sys_set_property_pkt *pkt,
 				    u32 mode);
-	int (*sys_release_resource)(struct hfi_sys_release_resource_pkt *pkt,
-				    struct hal_resource_hdr *resource_hdr);
 	void (*sys_ping)(struct hfi_sys_ping_pkt *pkt, u32 cookie);
 	void (*sys_image_version)(struct hfi_sys_get_property_pkt *pkt);
 	void (*ssr_cmd)(enum hal_ssr_trigger_type type,

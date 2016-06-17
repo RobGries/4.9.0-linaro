@@ -14,8 +14,8 @@
  */
 
 #include "common.h"
-#include "internal_buffers.h"
-#include "smem.h"
+#include "int_bufs.h"
+#include "mem.h"
 
 struct vidc_internal_buf {
 	struct list_head list;

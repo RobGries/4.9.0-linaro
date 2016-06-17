@@ -346,15 +346,12 @@ static const struct v4l2_ctrl_ops venc_ctrl_ops = {
 
 int venc_ctrl_init(struct vidc_inst *inst)
 {
-	struct device *dev = inst->core->dev;
 	unsigned int i;
 	int ret;
 
 	ret = v4l2_ctrl_handler_init(&inst->ctrl_handler, NUM_CTRLS);
-	if (ret) {
-		dev_err(dev, "ctrl handler init (%d)\n", ret);
+	if (ret)
 		return ret;
-	}
 
 	for (i = 0; i < NUM_CTRLS; i++) {
 		struct v4l2_ctrl *ctrl;
@@ -377,8 +374,6 @@ int venc_ctrl_init(struct vidc_inst *inst)
 		ret = inst->ctrl_handler.error;
 		if (ret) {
 			v4l2_ctrl_handler_free(&inst->ctrl_handler);
-			dev_err(dev, "adding ctrl id %x (%s) ret (%d)\n",
-				venc_ctrls[i].id, venc_ctrls[i].name, ret);
 			return ret;
 		}
 	}

@@ -16,7 +16,7 @@
 #include <linux/of.h>
 #include <linux/slab.h>
 
-#include "internal.h"
+#include "core.h"
 #include "resources.h"
 
 static const struct freq_tbl freq_table_8916[] = {

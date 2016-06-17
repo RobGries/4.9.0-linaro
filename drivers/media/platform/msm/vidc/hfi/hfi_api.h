@@ -19,7 +19,6 @@
 #include <linux/interrupt.h>
 
 #include "resources.h"
-#include "hfi.h"
 
 #define HAL_BUFFERFLAG_EOS			0x1
 #define HAL_BUFFERFLAG_STARTTIME		0x2
@@ -77,22 +76,21 @@ enum hal_error {
 	HAL_ERR_UNUSED			= 0x10000000
 };
 
-#define HAL_BUFFER_MAX		0xb
+#define HAL_BUFFER_MAX			11
 
 enum hal_buffer_type {
-	HAL_BUFFER_NONE			= 0x0,
-	HAL_BUFFER_INPUT		= 0x1,
-	HAL_BUFFER_OUTPUT		= 0x2,
-	HAL_BUFFER_OUTPUT2		= 0x4,
-	HAL_BUFFER_EXTRADATA_INPUT	= 0x8,
-	HAL_BUFFER_EXTRADATA_OUTPUT	= 0x10,
-	HAL_BUFFER_EXTRADATA_OUTPUT2	= 0x20,
-	HAL_BUFFER_INTERNAL_SCRATCH	= 0x40,
-	HAL_BUFFER_INTERNAL_SCRATCH_1	= 0x80,
+	HAL_BUFFER_NONE			= 0x000,
+	HAL_BUFFER_INPUT		= 0x001,
+	HAL_BUFFER_OUTPUT		= 0x002,
+	HAL_BUFFER_OUTPUT2		= 0x004,
+	HAL_BUFFER_EXTRADATA_INPUT	= 0x008,
+	HAL_BUFFER_EXTRADATA_OUTPUT	= 0x010,
+	HAL_BUFFER_EXTRADATA_OUTPUT2	= 0x020,
+	HAL_BUFFER_INTERNAL_SCRATCH	= 0x040,
+	HAL_BUFFER_INTERNAL_SCRATCH_1	= 0x080,
 	HAL_BUFFER_INTERNAL_SCRATCH_2	= 0x100,
 	HAL_BUFFER_INTERNAL_PERSIST	= 0x200,
 	HAL_BUFFER_INTERNAL_PERSIST_1	= 0x400,
-	HAL_BUFFER_INTERNAL_CMD_QUEUE	= 0x800,
 };
 
 enum hal_extradata_id {
@@ -1227,6 +1225,8 @@ enum hfi_packetization_type {
 #define call_hfi_op(hfi, op, args...)	\
 	(((hfi) && (hfi)->ops && (hfi)->ops->op) ?	\
 	((hfi)->ops->op(args)) : 0)
+
+struct hfi_device;
 
 struct hfi_core_ops {
 	int (*event_notify)(struct hfi_device *hfi, u32 event);

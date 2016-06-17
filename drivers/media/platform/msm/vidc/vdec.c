@@ -21,8 +21,7 @@
 
 #include "vdec.h"
 #include "vdec_ctrls.h"
-#include "internal.h"
-#include "internal_buffers.h"
+#include "core.h"
 #include "common.h"
 #include "load.h"
 

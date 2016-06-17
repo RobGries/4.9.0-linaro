@@ -20,9 +20,8 @@
 #include <media/v4l2-event.h>
 #include <media/v4l2-ctrls.h>
 
-#include "internal.h"
+#include "core.h"
 #include "common.h"
-#include "internal_buffers.h"
 #include "load.h"
 #include "venc_ctrls.h"
 

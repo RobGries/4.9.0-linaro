@@ -13,11 +13,12 @@
 #include <linux/slab.h>
 #include <linux/list.h>
 #include <linux/hash.h>
+#include <media/videobuf2-v4l2.h>
 
-#include "common.h"
-#include "hfi/hfi_api.h"
-#include "hfi/hfi_helper.h"
-#include "hfi/hfi.h"
+#include "hfi.h"
+#include "hfi_api.h"
+#include "hfi_helper.h"
+#include "hfi_msgs.h"
 
 static enum hal_error to_hal_error(u32 hfi_err)
 {

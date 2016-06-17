@@ -16,7 +16,7 @@
 #include <media/videobuf2-dma-sg.h>
 
 #include "common.h"
-#include "internal_buffers.h"
+#include "int_bufs.h"
 #include "load.h"
 
 static int session_set_buf(struct vb2_buffer *vb)

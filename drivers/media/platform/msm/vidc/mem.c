@@ -21,7 +21,7 @@
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
 
-#include "smem.h"
+#include "mem.h"
 
 static int alloc_dma_mem(struct device *dev, size_t size, u32 align,
 			 struct smem *mem, int map_kernel)

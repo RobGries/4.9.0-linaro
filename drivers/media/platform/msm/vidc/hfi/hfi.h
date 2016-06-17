@@ -15,8 +15,6 @@
 #ifndef __HFI_H__
 #define __HFI_H__
 
-#include "hfi/hfi_helper.h"
-
 #define HFI_OX_BASE				0x01000000
 
 #define HFI_EVENT_DATA_SEQUENCE_CHANGED_SUFFICIENT_BUFFER_RESOURCES	\
@@ -238,7 +236,7 @@ struct hfi_extradata_header {
 
 #define HFI_PROPERTY_CONFIG_VENC_OX_START	\
 	(HFI_DOMAIN_BASE_VENC + HFI_ARCH_OX_OFFSET + 0x6000)
-#define  HFI_PROPERTY_CONFIG_VENC_FRAME_QP	\
+#define HFI_PROPERTY_CONFIG_VENC_FRAME_QP	\
 	(HFI_PROPERTY_CONFIG_VENC_OX_START + 0x1)
 
 #define HFI_PROPERTY_PARAM_VPE_OX_START	\
@@ -406,126 +404,5 @@ struct hfi_hybrid_hierp {
 #define VIDC_IFACEQ_VAR_SMALL_PKT_SIZE	100
 #define VIDC_IFACEQ_VAR_LARGE_PKT_SIZE	512
 #define VIDC_IFACEQ_VAR_HUGE_PKT_SIZE	(1024 * 12)
-
-struct hfi_extradata_mb_quantization_payload {
-	u8 rg_mb_qp[1];
-};
-
-struct hfi_extradata_vc1_pswnd {
-	u32 ps_wnd_h_offset;
-	u32 ps_wnd_v_offset;
-	u32 ps_wnd_width;
-	u32 ps_wnd_height;
-};
-
-struct hfi_extradata_vc1_framedisp_payload {
-	u32 res_pic;
-	u32 ref;
-	u32 range_map_present;
-	u32 range_map_y;
-	u32 range_map_uv;
-	u32 num_pan_scan_wnds;
-	struct hfi_extradata_vc1_pswnd rg_ps_wnd[1];
-};
-
-struct hfi_extradata_vc1_seqdisp_payload {
-	u32 prog_seg_frm;
-	u32 uv_sampling_fmt;
-	u32 color_fmt_flag;
-	u32 color_primaries;
-	u32 transfer_char;
-	u32 mat_coeff;
-	u32 aspect_ratio;
-	u32 aspect_horiz;
-	u32 aspect_vert;
-};
-
-struct hfi_extradata_timestamp_payload {
-	u32 timestamp_low;
-	u32 timestamp_high;
-};
-
-struct hfi_extradata_s3d_frame_packing_payload {
-	u32 fpa_id;
-	int cancel_flag;
-	u32 fpa_type;
-	int quin_cunx_flag;
-	u32 content_interprtation_type;
-	int spatial_flipping_flag;
-	int frame0_flipped_flag;
-	int field_views_flag;
-	int current_frame_isFrame0_flag;
-	int frame0_self_contained_flag;
-	int frame1_self_contained_flag;
-	u32 frame0_graid_pos_x;
-	u32 frame0_graid_pos_y;
-	u32 frame1_graid_pos_x;
-	u32 frame1_graid_pos_y;
-	u32 fpa_reserved_byte;
-	u32 fpa_repetition_period;
-	int fpa_extension_flag;
-};
-
-struct hfi_extradata_interlace_video_payload {
-	u32 format;
-};
-
-struct hfi_extradata_num_concealed_mb_payload {
-	u32 num_mb_concealed;
-};
-
-struct hfi_extradata_sliceinfo {
-	u32 offset_in_stream;
-	u32 slice_length;
-};
-
-struct hfi_extradata_multislice_info_payload {
-	u32 num_slices;
-	struct hfi_extradata_sliceinfo rg_slice_info[1];
-};
-
-struct hfi_index_extradata_input_crop_payload {
-	u32 size;
-	u32 version;
-	u32 port_index;
-	u32 left;
-	u32 top;
-	u32 width;
-	u32 height;
-};
-
-struct hfi_index_extradata_digital_zoom_payload {
-	u32 size;
-	u32 version;
-	u32 port_index;
-	int width;
-	int height;
-};
-
-struct hfi_index_extradata_aspect_ratio_payload {
-	u32 size;
-	u32 version;
-	u32 port_index;
-	u32 aspect_width;
-	u32 aspect_height;
-};
-
-struct hfi_extradata_panscan_wndw_payload {
-	u32 num_window;
-	struct hfi_extradata_vc1_pswnd wnd[1];
-};
-
-struct hfi_extradata_frame_type_payload {
-	u32 frame_rate;
-};
-
-struct hfi_extradata_recovery_point_sei_payload {
-	u32 flag;
-};
-
-struct hfi_device;
-
-void hfi_process_watchdog_timeout(struct hfi_device *hfi);
-u32 hfi_process_msg_packet(struct hfi_device *hfi, struct hfi_pkt_hdr *hdr);
 
 #endif
