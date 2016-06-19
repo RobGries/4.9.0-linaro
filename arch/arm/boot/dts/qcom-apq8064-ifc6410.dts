@@ -221,7 +221,7 @@
 			status = "okay";
 			compatible = "auo,b101xtn01";
 
-			ddc-i2c-bus = <&i2c3>;
+			ddc-i2c-bus = <&gsbi3_i2c>;
 			backlight = <&backlight>;
 			power-supply = <&panel_3p3v>;
 			port {
@@ -234,7 +234,7 @@
 		gsbi3: gsbi@16200000 {
 			status = "okay";
 			qcom,mode = <GSBI_PROT_I2C>;
-			i2c3: i2c@16280000 {
+			i2c@16280000 {
 				status = "okay";
 			};
 		};
