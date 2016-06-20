@@ -21,7 +21,7 @@
 #include <media/v4l2-ctrls.h>
 
 #include "core.h"
-#include "common.h"
+#include "helpers.h"
 #include "load.h"
 #include "venc_ctrls.h"
 

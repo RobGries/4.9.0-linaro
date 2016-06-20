@@ -17,9 +17,9 @@
 #include <linux/platform_device.h>
 #include <linux/videodev2.h>
 
-#include "venus/venus_hfi.h"
 #include "hfi.h"
 #include "hfi_cmds.h"
+#include "venus/venus_hfi.h"
 
 #define TIMEOUT		msecs_to_jiffies(1000)
 

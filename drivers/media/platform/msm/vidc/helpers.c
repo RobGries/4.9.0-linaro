@@ -15,7 +15,7 @@
 #include <linux/pm_runtime.h>
 #include <media/videobuf2-dma-sg.h>
 
-#include "common.h"
+#include "helpers.h"
 #include "int_bufs.h"
 #include "load.h"
 

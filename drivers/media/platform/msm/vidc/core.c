@@ -25,9 +25,9 @@
 #include <media/v4l2-ioctl.h>
 
 #include "core.h"
+#include "resources.h"
 #include "vdec.h"
 #include "venc.h"
-#include "resources.h"
 
 #define VIDC_CORES_MAX		2
 

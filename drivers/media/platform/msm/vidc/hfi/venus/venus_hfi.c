@@ -17,14 +17,14 @@
 #include <linux/interrupt.h>
 #include <linux/iopoll.h>
 #include <linux/kernel.h>
-#include <linux/slab.h>
 #include <linux/qcom_scm.h>
+#include <linux/slab.h>
 
-#include "venus_hfi.h"
-#include "venus_hfi_io.h"
-#include "mem.h"
 #include "hfi/hfi_cmds.h"
 #include "hfi/hfi_msgs.h"
+#include "mem.h"
+#include "venus_hfi.h"
+#include "venus_hfi_io.h"
 
 #define HFI_MASK_QHDR_TX_TYPE		0xff000000
 #define HFI_MASK_QHDR_RX_TYPE		0x00ff0000

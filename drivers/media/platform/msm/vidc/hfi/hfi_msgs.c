@@ -10,9 +10,9 @@
  * GNU General Public License for more details.
  *
  */
-#include <linux/slab.h>
-#include <linux/list.h>
 #include <linux/hash.h>
+#include <linux/list.h>
+#include <linux/slab.h>
 #include <media/videobuf2-v4l2.h>
 
 #include "hfi.h"

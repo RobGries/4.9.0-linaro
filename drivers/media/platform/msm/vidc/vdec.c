@@ -19,11 +19,11 @@
 #include <media/v4l2-ctrls.h>
 #include <media/videobuf2-dma-sg.h>
 
+#include "core.h"
+#include "helpers.h"
+#include "load.h"
 #include "vdec.h"
 #include "vdec_ctrls.h"
-#include "core.h"
-#include "common.h"
-#include "load.h"
 
 #define MACROBLOCKS_PER_PIXEL	(16 * 16)
 
