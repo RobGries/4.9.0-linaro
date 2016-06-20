@@ -11,14 +11,14 @@
  *
  */
 
-#ifndef _MSM_VIDC_INTERNAL_H_
-#define _MSM_VIDC_INTERNAL_H_
+#ifndef __VIDC_CORE_H_
+#define __VIDC_CORE_H_
 
 #include <media/v4l2-device.h>
 #include <media/v4l2-ctrls.h>
 #include <media/videobuf2-core.h>
 
-#include "hfi/hfi_api.h"
+#include "hfi/hfi.h"
 
 #define VIDC_DRV_NAME		"vidc"
 

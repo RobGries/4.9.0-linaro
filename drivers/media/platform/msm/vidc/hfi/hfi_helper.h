@@ -65,6 +65,239 @@
 #define HFI_EVENT_SYS_ERROR			(HFI_COMMON_BASE + 0x1)
 #define HFI_EVENT_SESSION_ERROR			(HFI_COMMON_BASE + 0x2)
 
+#define HFI_OX_BASE				0x01000000
+
+#define HFI_EVENT_DATA_SEQUENCE_CHANGED_SUFFICIENT_BUFFER_RESOURCES	\
+						(HFI_OX_BASE + 0x1)
+#define HFI_EVENT_DATA_SEQUENCE_CHANGED_INSUFFICIENT_BUFFER_RESOURCES	\
+						(HFI_OX_BASE + 0x2)
+#define HFI_EVENT_SESSION_SEQUENCE_CHANGED	(HFI_OX_BASE + 0x3)
+#define HFI_EVENT_SESSION_PROPERTY_CHANGED	(HFI_OX_BASE + 0x4)
+#define HFI_EVENT_SESSION_LTRUSE_FAILED		(HFI_OX_BASE + 0x5)
+#define HFI_EVENT_RELEASE_BUFFER_REFERENCE	(HFI_OX_BASE + 0x6)
+
+#define HFI_BUFFERFLAG_EOS				0x00000001
+#define HFI_BUFFERFLAG_STARTTIME			0x00000002
+#define HFI_BUFFERFLAG_DECODEONLY			0x00000004
+#define HFI_BUFFERFLAG_DATACORRUPT			0x00000008
+#define HFI_BUFFERFLAG_ENDOFFRAME			0x00000010
+#define HFI_BUFFERFLAG_SYNCFRAME			0x00000020
+#define HFI_BUFFERFLAG_EXTRADATA			0x00000040
+#define HFI_BUFFERFLAG_CODECCONFIG			0x00000080
+#define HFI_BUFFERFLAG_TIMESTAMPINVALID			0x00000100
+#define HFI_BUFFERFLAG_READONLY				0x00000200
+#define HFI_BUFFERFLAG_ENDOFSUBFRAME			0x00000400
+#define HFI_BUFFERFLAG_EOSEQ				0x00200000
+#define HFI_BUFFERFLAG_MBAFF				0x08000000
+#define HFI_BUFFERFLAG_VPE_YUV_601_709_CSC_CLAMP	0x10000000
+#define HFI_BUFFERFLAG_DROP_FRAME			0x20000000
+#define HFI_BUFFERFLAG_TEI				0x40000000
+#define HFI_BUFFERFLAG_DISCONTINUITY			0x80000000
+
+#define HFI_ERR_SESSION_EMPTY_BUFFER_DONE_OUTPUT_PENDING	\
+							(HFI_OX_BASE + 0x1001)
+#define HFI_ERR_SESSION_SAME_STATE_OPERATION	\
+							(HFI_OX_BASE + 0x1002)
+#define HFI_ERR_SESSION_SYNC_FRAME_NOT_DETECTED	\
+							(HFI_OX_BASE + 0x1003)
+#define HFI_ERR_SESSION_START_CODE_NOT_FOUND	\
+							(HFI_OX_BASE + 0x1004)
+
+#define HFI_BUFFER_INTERNAL_SCRATCH			(HFI_OX_BASE + 0x1)
+#define HFI_BUFFER_EXTRADATA_INPUT			(HFI_OX_BASE + 0x2)
+#define HFI_BUFFER_EXTRADATA_OUTPUT			(HFI_OX_BASE + 0x3)
+#define HFI_BUFFER_EXTRADATA_OUTPUT2			(HFI_OX_BASE + 0x4)
+#define HFI_BUFFER_INTERNAL_SCRATCH_1			(HFI_OX_BASE + 0x5)
+#define HFI_BUFFER_INTERNAL_SCRATCH_2			(HFI_OX_BASE + 0x6)
+
+#define HFI_BUFFER_MODE_STATIC				(HFI_OX_BASE + 0x1)
+#define HFI_BUFFER_MODE_RING				(HFI_OX_BASE + 0x2)
+#define HFI_BUFFER_MODE_DYNAMIC				(HFI_OX_BASE + 0x3)
+
+#define HFI_FLUSH_INPUT					(HFI_OX_BASE + 0x1)
+#define HFI_FLUSH_OUTPUT				(HFI_OX_BASE + 0x2)
+#define HFI_FLUSH_OUTPUT2				(HFI_OX_BASE + 0x3)
+#define HFI_FLUSH_ALL					(HFI_OX_BASE + 0x4)
+
+#define HFI_EXTRADATA_NONE				0x00000000
+#define HFI_EXTRADATA_MB_QUANTIZATION			0x00000001
+#define HFI_EXTRADATA_INTERLACE_VIDEO			0x00000002
+#define HFI_EXTRADATA_VC1_FRAMEDISP			0x00000003
+#define HFI_EXTRADATA_VC1_SEQDISP			0x00000004
+#define HFI_EXTRADATA_TIMESTAMP				0x00000005
+#define HFI_EXTRADATA_S3D_FRAME_PACKING			0x00000006
+#define HFI_EXTRADATA_FRAME_RATE			0x00000007
+#define HFI_EXTRADATA_PANSCAN_WINDOW			0x00000008
+#define HFI_EXTRADATA_RECOVERY_POINT_SEI		0x00000009
+#define HFI_EXTRADATA_MPEG2_SEQDISP			0x0000000d
+#define HFI_EXTRADATA_STREAM_USERDATA			0x0000000e
+#define HFI_EXTRADATA_FRAME_QP				0x0000000f
+#define HFI_EXTRADATA_FRAME_BITS_INFO			0x00000010
+#define HFI_EXTRADATA_MULTISLICE_INFO			0x7f100000
+#define HFI_EXTRADATA_NUM_CONCEALED_MB			0x7f100001
+#define HFI_EXTRADATA_INDEX				0x7f100002
+#define HFI_EXTRADATA_METADATA_LTR			0x7f100004
+#define HFI_EXTRADATA_METADATA_FILLER			0x7fe00002
+
+#define HFI_INDEX_EXTRADATA_INPUT_CROP			0x0700000e
+#define HFI_INDEX_EXTRADATA_DIGITAL_ZOOM		0x07000010
+#define HFI_INDEX_EXTRADATA_ASPECT_RATIO		0x7f100003
+
+#define HFI_INTERLACE_FRAME_PROGRESSIVE			0x01
+#define HFI_INTERLACE_INTERLEAVE_FRAME_TOPFIELDFIRST	0x02
+#define HFI_INTERLACE_INTERLEAVE_FRAME_BOTTOMFIELDFIRST	0x04
+#define HFI_INTERLACE_FRAME_TOPFIELDFIRST		0x08
+#define HFI_INTERLACE_FRAME_BOTTOMFIELDFIRST		0x10
+
+#define HFI_ARCH_OX_OFFSET				0x200000
+
+#define HFI_PROPERTY_SYS_OX_START	\
+	(HFI_DOMAIN_BASE_COMMON + HFI_ARCH_OX_OFFSET + 0x0000)
+
+#define HFI_PROPERTY_PARAM_OX_START	\
+	(HFI_DOMAIN_BASE_COMMON + HFI_ARCH_OX_OFFSET + 0x1000)
+#define HFI_PROPERTY_PARAM_BUFFER_COUNT_ACTUAL	\
+	(HFI_PROPERTY_PARAM_OX_START + 0x1)
+#define HFI_PROPERTY_PARAM_UNCOMPRESSED_PLANE_ACTUAL_CONSTRAINTS_INFO	\
+	(HFI_PROPERTY_PARAM_OX_START + 0x2)
+#define HFI_PROPERTY_PARAM_INTERLACE_FORMAT_SUPPORTED	\
+	(HFI_PROPERTY_PARAM_OX_START + 0x3)
+#define HFI_PROPERTY_PARAM_CHROMA_SITE	\
+	(HFI_PROPERTY_PARAM_OX_START + 0x4)
+#define HFI_PROPERTY_PARAM_EXTRA_DATA_HEADER_CONFIG	\
+	(HFI_PROPERTY_PARAM_OX_START + 0x5)
+#define HFI_PROPERTY_PARAM_INDEX_EXTRADATA	\
+	(HFI_PROPERTY_PARAM_OX_START + 0x6)
+#define HFI_PROPERTY_PARAM_DIVX_FORMAT	\
+	(HFI_PROPERTY_PARAM_OX_START + 0x7)
+#define HFI_PROPERTY_PARAM_BUFFER_ALLOC_MODE	\
+	(HFI_PROPERTY_PARAM_OX_START + 0x8)
+#define HFI_PROPERTY_PARAM_S3D_FRAME_PACKING_EXTRADATA	\
+	(HFI_PROPERTY_PARAM_OX_START + 0x9)
+#define HFI_PROPERTY_PARAM_ERR_DETECTION_CODE_EXTRADATA	\
+	(HFI_PROPERTY_PARAM_OX_START + 0xa)
+#define HFI_PROPERTY_PARAM_BUFFER_ALLOC_MODE_SUPPORTED	\
+	(HFI_PROPERTY_PARAM_OX_START + 0xb)
+#define HFI_PROPERTY_PARAM_BUFFER_SIZE_ACTUAL	\
+	(HFI_PROPERTY_PARAM_OX_START + 0xc)
+#define HFI_PROPERTY_PARAM_BUFFER_DISPLAY_HOLD_COUNT_ACTUAL	\
+	(HFI_PROPERTY_PARAM_OX_START + 0xd)
+
+#define HFI_PROPERTY_CONFIG_OX_START	\
+	(HFI_DOMAIN_BASE_COMMON + HFI_ARCH_OX_OFFSET + 0x2000)
+#define HFI_PROPERTY_CONFIG_BUFFER_REQUIREMENTS	\
+	(HFI_PROPERTY_CONFIG_OX_START + 0x1)
+#define HFI_PROPERTY_CONFIG_REALTIME	\
+	(HFI_PROPERTY_CONFIG_OX_START + 0x2)
+#define HFI_PROPERTY_CONFIG_PRIORITY	\
+	(HFI_PROPERTY_CONFIG_OX_START + 0x3)
+#define HFI_PROPERTY_CONFIG_BATCH_INFO	\
+	(HFI_PROPERTY_CONFIG_OX_START + 0x4)
+
+#define HFI_PROPERTY_PARAM_VDEC_OX_START	\
+	(HFI_DOMAIN_BASE_VDEC + HFI_ARCH_OX_OFFSET + 0x3000)
+#define HFI_PROPERTY_PARAM_VDEC_CONTINUE_DATA_TRANSFER	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x1)
+#define HFI_PROPERTY_PARAM_VDEC_DISPLAY_PICTURE_BUFFER_COUNT	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x2)
+#define HFI_PROPERTY_PARAM_VDEC_MULTI_VIEW_SELECT	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x3)
+#define HFI_PROPERTY_PARAM_VDEC_PICTURE_TYPE_DECODE	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x4)
+#define HFI_PROPERTY_PARAM_VDEC_OUTPUT_ORDER	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x5)
+#define HFI_PROPERTY_PARAM_VDEC_MB_QUANTIZATION	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x6)
+#define HFI_PROPERTY_PARAM_VDEC_NUM_CONCEALED_MB	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x7)
+#define HFI_PROPERTY_PARAM_VDEC_H264_ENTROPY_SWITCHING	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x8)
+#define HFI_PROPERTY_PARAM_VDEC_OUTPUT2_KEEP_ASPECT_RATIO	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x9)
+#define HFI_PROPERTY_PARAM_VDEC_FRAME_RATE_EXTRADATA	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0xa)
+#define HFI_PROPERTY_PARAM_VDEC_PANSCAN_WNDW_EXTRADATA	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0xb)
+#define HFI_PROPERTY_PARAM_VDEC_RECOVERY_POINT_SEI_EXTRADATA	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0xc)
+#define HFI_PROPERTY_PARAM_VDEC_THUMBNAIL_MODE	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0xd)
+#define HFI_PROPERTY_PARAM_VDEC_FRAME_ASSEMBLY	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0xe)
+#define HFI_PROPERTY_PARAM_VDEC_VC1_FRAMEDISP_EXTRADATA	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x11)
+#define HFI_PROPERTY_PARAM_VDEC_VC1_SEQDISP_EXTRADATA	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x12)
+#define HFI_PROPERTY_PARAM_VDEC_TIMESTAMP_EXTRADATA	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x13)
+#define HFI_PROPERTY_PARAM_VDEC_INTERLACE_VIDEO_EXTRADATA	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x14)
+#define HFI_PROPERTY_PARAM_VDEC_AVC_SESSION_SELECT	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x15)
+#define HFI_PROPERTY_PARAM_VDEC_MPEG2_SEQDISP_EXTRADATA	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x16)
+#define HFI_PROPERTY_PARAM_VDEC_STREAM_USERDATA_EXTRADATA	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x17)
+#define HFI_PROPERTY_PARAM_VDEC_FRAME_QP_EXTRADATA	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x18)
+#define HFI_PROPERTY_PARAM_VDEC_FRAME_BITS_INFO_EXTRADATA	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x19)
+#define HFI_PROPERTY_PARAM_VDEC_SCS_THRESHOLD	\
+	(HFI_PROPERTY_PARAM_VDEC_OX_START + 0x1a)
+
+#define HFI_PROPERTY_CONFIG_VDEC_OX_START	\
+	(HFI_DOMAIN_BASE_VDEC + HFI_ARCH_OX_OFFSET + 0x0000)
+#define HFI_PROPERTY_CONFIG_VDEC_POST_LOOP_DEBLOCKER	\
+	(HFI_PROPERTY_CONFIG_VDEC_OX_START + 0x1)
+#define HFI_PROPERTY_CONFIG_VDEC_MB_ERROR_MAP_REPORTING	\
+	(HFI_PROPERTY_CONFIG_VDEC_OX_START + 0x2)
+#define HFI_PROPERTY_CONFIG_VDEC_MB_ERROR_MAP	\
+	(HFI_PROPERTY_CONFIG_VDEC_OX_START + 0x3)
+
+#define HFI_PROPERTY_PARAM_VENC_OX_START	\
+	(HFI_DOMAIN_BASE_VENC + HFI_ARCH_OX_OFFSET + 0x5000)
+#define  HFI_PROPERTY_PARAM_VENC_MULTI_SLICE_INFO	\
+	(HFI_PROPERTY_PARAM_VENC_OX_START + 0x1)
+#define  HFI_PROPERTY_PARAM_VENC_H264_IDR_S3D_FRAME_PACKING_NAL	\
+	(HFI_PROPERTY_PARAM_VENC_OX_START + 0x2)
+#define  HFI_PROPERTY_PARAM_VENC_LTR_INFO	\
+	(HFI_PROPERTY_PARAM_VENC_OX_START + 0x3)
+#define  HFI_PROPERTY_PARAM_VENC_MBI_DUMPING	\
+	(HFI_PROPERTY_PARAM_VENC_OX_START + 0x5)
+
+#define HFI_PROPERTY_CONFIG_VENC_OX_START	\
+	(HFI_DOMAIN_BASE_VENC + HFI_ARCH_OX_OFFSET + 0x6000)
+#define HFI_PROPERTY_CONFIG_VENC_FRAME_QP	\
+	(HFI_PROPERTY_CONFIG_VENC_OX_START + 0x1)
+
+#define HFI_PROPERTY_PARAM_VPE_OX_START	\
+	(HFI_DOMAIN_BASE_VPE + HFI_ARCH_OX_OFFSET + 0x7000)
+#define HFI_PROPERTY_PARAM_VPE_COLOR_SPACE_CONVERSION	\
+	(HFI_PROPERTY_PARAM_VPE_OX_START + 0x1)
+
+#define HFI_PROPERTY_CONFIG_VPE_OX_START	\
+	(HFI_DOMAIN_BASE_VPE + HFI_ARCH_OX_OFFSET + 0x8000)
+
+#define HFI_CHROMA_SITE_0			(HFI_OX_BASE + 0x1)
+#define HFI_CHROMA_SITE_1			(HFI_OX_BASE + 0x2)
+#define HFI_CHROMA_SITE_2			(HFI_OX_BASE + 0x3)
+#define HFI_CHROMA_SITE_3			(HFI_OX_BASE + 0x4)
+#define HFI_CHROMA_SITE_4			(HFI_OX_BASE + 0x5)
+#define HFI_CHROMA_SITE_5			(HFI_OX_BASE + 0x6)
+
+#define HFI_PRIORITY_LOW			10
+#define HFI_PRIOIRTY_MEDIUM			20
+#define HFI_PRIORITY_HIGH			30
+
+#define HFI_OUTPUT_ORDER_DISPLAY		(HFI_OX_BASE + 0x1)
+#define HFI_OUTPUT_ORDER_DECODE			(HFI_OX_BASE + 0x2)
+
+#define HFI_RATE_CONTROL_OFF			(HFI_OX_BASE + 0x1)
+#define HFI_RATE_CONTROL_VBR_VFR		(HFI_OX_BASE + 0x2)
+#define HFI_RATE_CONTROL_VBR_CFR		(HFI_OX_BASE + 0x3)
+#define HFI_RATE_CONTROL_CBR_VFR		(HFI_OX_BASE + 0x4)
+#define HFI_RATE_CONTROL_CBR_CFR		(HFI_OX_BASE + 0x5)
+
 #define HFI_VIDEO_CODEC_H264			0x00000002
 #define HFI_VIDEO_CODEC_H263			0x00000004
 #define HFI_VIDEO_CODEC_MPEG1			0x00000008
@@ -203,11 +436,6 @@
 
 #define HFI_VENC_PERFMODE_MAX_QUALITY		0x1
 #define HFI_VENC_PERFMODE_POWER_SAVE		0x2
-
-struct hfi_buffer_info {
-	u32 buffer_addr;
-	u32 extradata_addr;
-};
 
 #define HFI_PROPERTY_SYS_COMMON_START	\
 	(HFI_DOMAIN_BASE_COMMON + HFI_ARCH_COMMON_OFFSET + 0x0000)
@@ -389,6 +617,11 @@ struct hfi_buffer_info {
 	(HFI_PROPERTY_CONFIG_VPE_COMMON_START + 0x1)
 #define HFI_PROPERTY_CONFIG_VPE_OPERATIONS	\
 	(HFI_PROPERTY_CONFIG_VPE_COMMON_START + 0x2)
+
+struct hfi_buffer_info {
+	u32 buffer_addr;
+	u32 extradata_addr;
+};
 
 struct hfi_bitrate {
 	u32 bitrate;
@@ -632,11 +865,6 @@ struct hfi_h264_vui_timing_info {
 	u32 time_scale;
 };
 
-/* Base Offset for UBWC color formats  */
-#define HFI_COLOR_FORMAT_UBWC_BASE		0x8000
-/* Base Offset for 10-bit color formats */
-#define HFI_COLOR_FORMAT_10_BIT_BASE		0x4000
-
 #define HFI_COLOR_FORMAT_MONOCHROME		(HFI_COMMON_BASE + 0x1)
 #define HFI_COLOR_FORMAT_NV12			(HFI_COMMON_BASE + 0x2)
 #define HFI_COLOR_FORMAT_NV21			(HFI_COMMON_BASE + 0x3)
@@ -653,6 +881,9 @@ struct hfi_h264_vui_timing_info {
 #define HFI_COLOR_FORMAT_YUV444			(HFI_COMMON_BASE + 0xe)
 #define HFI_COLOR_FORMAT_RGBA8888		(HFI_COMMON_BASE + 0x10)
 
+#define HFI_COLOR_FORMAT_UBWC_BASE		0x8000
+#define HFI_COLOR_FORMAT_10_BIT_BASE		0x4000
+
 #define HFI_COLOR_FORMAT_YUV420_TP10	\
 	(HFI_COLOR_FORMAT_10_BIT_BASE + HFI_COLOR_FORMAT_NV12)
 #define HFI_COLOR_FORMAT_NV12_UBWC	\
@@ -661,10 +892,6 @@ struct hfi_h264_vui_timing_info {
 	(HFI_COLOR_FORMAT_UBWC_BASE + HFI_COLOR_FORMAT_YUV420_TP10)
 #define HFI_COLOR_FORMAT_RGBA8888_UBWC	\
 	(HFI_COLOR_FORMAT_UBWC_BASE + HFI_COLOR_FORMAT_RGBA8888)
-
-#define HFI_MAX_MATRIX_COEFFS	9
-#define HFI_MAX_BIAS_COEFFS	3
-#define HFI_MAX_LIMIT_COEFFS	6
 
 struct hfi_uncompressed_format_select {
 	u32 buffer_type;
@@ -716,6 +943,10 @@ struct hfi_properties_supported {
 	u32 num_properties;
 	u32 properties[1];
 };
+
+#define HFI_MAX_MATRIX_COEFFS	9
+#define HFI_MAX_BIAS_COEFFS	3
+#define HFI_MAX_LIMIT_COEFFS	6
 
 struct hfi_vpe_color_space_conversion {
 	u32 csc_matrix[HFI_MAX_MATRIX_COEFFS];
@@ -819,52 +1050,110 @@ struct hfi_scs_threshold {
 	u32 threshold_value;
 };
 
-#define HFI_CMD_SYS_COMMON_START	(HFI_DOMAIN_BASE_COMMON +	\
-					 HFI_ARCH_COMMON_OFFSET +	\
-					 HFI_CMD_START_OFFSET + 0x0000)
-#define HFI_CMD_SYS_INIT		(HFI_CMD_SYS_COMMON_START + 0x1)
-#define HFI_CMD_SYS_PC_PREP		(HFI_CMD_SYS_COMMON_START + 0x2)
-#define HFI_CMD_SYS_SET_RESOURCE	(HFI_CMD_SYS_COMMON_START + 0x3)
-#define HFI_CMD_SYS_RELEASE_RESOURCE	(HFI_CMD_SYS_COMMON_START + 0x4)
-#define HFI_CMD_SYS_SET_PROPERTY	(HFI_CMD_SYS_COMMON_START + 0x5)
-#define HFI_CMD_SYS_GET_PROPERTY	(HFI_CMD_SYS_COMMON_START + 0x6)
-#define HFI_CMD_SYS_SESSION_INIT	(HFI_CMD_SYS_COMMON_START + 0x7)
-#define HFI_CMD_SYS_SESSION_END		(HFI_CMD_SYS_COMMON_START + 0x8)
-#define HFI_CMD_SYS_SET_BUFFERS		(HFI_CMD_SYS_COMMON_START + 0x9)
-#define HFI_CMD_SYS_TEST_START		(HFI_CMD_SYS_COMMON_START + 0x100)
-
-#define HFI_CMD_SESSION_COMMON_START	(HFI_DOMAIN_BASE_COMMON +	\
-					 HFI_ARCH_COMMON_OFFSET +	\
-					 HFI_CMD_START_OFFSET + 0x1000)
-#define HFI_CMD_SESSION_SET_PROPERTY	(HFI_CMD_SESSION_COMMON_START + 0x1)
-#define HFI_CMD_SESSION_SET_BUFFERS	(HFI_CMD_SESSION_COMMON_START + 0x2)
-#define HFI_CMD_SESSION_GET_SEQUENCE_HEADER	\
-					(HFI_CMD_SESSION_COMMON_START + 0x3)
-
-#define HFI_MSG_SYS_COMMON_START	(HFI_DOMAIN_BASE_COMMON +	\
-					 HFI_ARCH_COMMON_OFFSET +	\
-					 HFI_MSG_START_OFFSET + 0x0000)
-#define HFI_MSG_SYS_INIT_DONE		(HFI_MSG_SYS_COMMON_START + 0x1)
-#define HFI_MSG_SYS_PC_PREP_DONE	(HFI_MSG_SYS_COMMON_START + 0x2)
-#define HFI_MSG_SYS_RELEASE_RESOURCE	(HFI_MSG_SYS_COMMON_START + 0x3)
-#define HFI_MSG_SYS_DEBUG		(HFI_MSG_SYS_COMMON_START + 0x4)
-#define HFI_MSG_SYS_SESSION_INIT_DONE	(HFI_MSG_SYS_COMMON_START + 0x6)
-#define HFI_MSG_SYS_SESSION_END_DONE	(HFI_MSG_SYS_COMMON_START + 0x7)
-#define HFI_MSG_SYS_IDLE		(HFI_MSG_SYS_COMMON_START + 0x8)
-#define HFI_MSG_SYS_COV                 (HFI_MSG_SYS_COMMON_START + 0x9)
-#define HFI_MSG_SYS_PROPERTY_INFO	(HFI_MSG_SYS_COMMON_START + 0xa)
-
-#define HFI_MSG_SESSION_COMMON_START	(HFI_DOMAIN_BASE_COMMON +	\
-					 HFI_ARCH_COMMON_OFFSET +	\
-					 HFI_MSG_START_OFFSET + 0x1000)
-#define HFI_MSG_EVENT_NOTIFY		(HFI_MSG_SESSION_COMMON_START + 0x1)
-#define HFI_MSG_SESSION_GET_SEQUENCE_HEADER_DONE	\
-					(HFI_MSG_SESSION_COMMON_START + 0x2)
-
-#define HFI_CMD_SYS_TEST_SSR		(HFI_CMD_SYS_TEST_START + 0x1)
 #define HFI_TEST_SSR_SW_ERR_FATAL	0x1
 #define HFI_TEST_SSR_SW_DIV_BY_ZERO	0x2
 #define HFI_TEST_SSR_HW_WDOG_IRQ	0x3
+
+struct hfi_buffer_alloc_mode {
+	u32 type;
+	u32 mode;
+};
+
+struct hfi_index_extradata_config {
+	u32 enable;
+	u32 index_extra_data_id;
+};
+
+struct hfi_extradata_header {
+	u32 size;
+	u32 version;
+	u32 port_index;
+	u32 type;
+	u32 data_size;
+	u8 data[1];
+};
+
+struct hfi_batch_info {
+	u32 input_batch_count;
+	u32 output_batch_count;
+};
+
+struct hfi_buffer_count_actual {
+	u32 type;
+	u32 count_actual;
+};
+
+struct hfi_buffer_size_actual {
+	u32 type;
+	u32 size;
+};
+
+struct hfi_buffer_display_hold_count_actual {
+	u32 type;
+	u32 hold_count;
+};
+
+struct hfi_buffer_requirements {
+	u32 type;
+	u32 size;
+	u32 region_size;
+	u32 hold_count;
+	u32 count_min;
+	u32 count_actual;
+	u32 contiguous;
+	u32 alignment;
+};
+
+struct hfi_data_payload {
+	u32 size;
+	u8 data[1];
+};
+
+struct hfi_enable_picture {
+	u32 picture_type;
+};
+
+struct hfi_display_picture_buffer_count {
+	int enable;
+	u32 count;
+};
+
+struct hfi_extra_data_header_config {
+	u32 type;
+	u32 buffer_type;
+	u32 version;
+	u32 port_index;
+	u32 client_extra_data_id;
+};
+
+struct hfi_interlace_format_supported {
+	u32 buffer_type;
+	u32 format;
+};
+
+struct hfi_buffer_alloc_mode_supported {
+	u32 buffer_type;
+	u32 num_entries;
+	u32 data[1];
+};
+
+struct hfi_mb_error_map {
+	u32 error_map_size;
+	u8 error_map[1];
+};
+
+struct hfi_metadata_pass_through {
+	int enable;
+	u32 size;
+};
+
+struct hfi_multi_view_select {
+	u32 view_index;
+};
+
+struct hfi_hybrid_hierp {
+	u32 layers;
+};
 
 struct hfi_pkt_hdr {
 	u32 size;
@@ -876,437 +1165,8 @@ struct hfi_session_hdr_pkt {
 	u32 session_id;
 };
 
-/* command packets */
-struct hfi_sys_init_pkt {
-	struct hfi_pkt_hdr hdr;
-	u32 arch_type;
-};
-
-struct hfi_sys_pc_prep_pkt {
-	struct hfi_pkt_hdr hdr;
-};
-
-struct hfi_sys_set_resource_pkt {
-	struct hfi_pkt_hdr hdr;
-	u32 resource_handle;
-	u32 resource_type;
-	u32 resource_data[1];
-};
-
-struct hfi_sys_release_resource_pkt {
-	struct hfi_pkt_hdr hdr;
-	u32 resource_type;
-	u32 resource_handle;
-};
-
-struct hfi_sys_set_property_pkt {
-	struct hfi_pkt_hdr hdr;
-	u32 num_properties;
-	u32 data[1];
-};
-
-struct hfi_sys_get_property_pkt {
-	struct hfi_pkt_hdr hdr;
-	u32 num_properties;
-	u32 data[1];
-};
-
-struct hfi_sys_set_buffers_pkt {
-	struct hfi_pkt_hdr hdr;
-	u32 buffer_type;
-	u32 buffer_size;
-	u32 num_buffers;
-	u32 buffer_addr[1];
-};
-
-struct hfi_sys_ping_pkt {
-	struct hfi_pkt_hdr hdr;
-	u32 client_data;
-};
-
 struct hfi_session_pkt {
 	struct hfi_session_hdr_pkt shdr;
-};
-
-struct hfi_session_init_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 session_domain;
-	u32 session_codec;
-};
-
-struct hfi_session_end_pkt {
-	struct hfi_session_hdr_pkt shdr;
-};
-
-struct hfi_session_abort_pkt {
-	struct hfi_session_hdr_pkt shdr;
-};
-
-struct hfi_session_set_property_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 num_properties;
-	u32 data[0];
-};
-
-struct hfi_session_set_buffers_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 buffer_type;
-	u32 buffer_size;
-	u32 extradata_size;
-	u32 min_buffer_size;
-	u32 num_buffers;
-	u32 buffer_info[1];
-};
-
-struct hfi_session_get_sequence_header_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 buffer_len;
-	u32 packet_buffer;
-};
-
-struct hfi_session_load_resources_pkt {
-	struct hfi_session_hdr_pkt shdr;
-};
-
-struct hfi_session_start_pkt {
-	struct hfi_session_hdr_pkt shdr;
-};
-
-struct hfi_session_stop_pkt {
-	struct hfi_session_hdr_pkt shdr;
-};
-
-struct hfi_session_empty_buffer_compressed_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 time_stamp_hi;
-	u32 time_stamp_lo;
-	u32 flags;
-	u32 mark_target;
-	u32 mark_data;
-	u32 offset;
-	u32 alloc_len;
-	u32 filled_len;
-	u32 input_tag;
-	u32 packet_buffer;
-	u32 extradata_buffer;
-	u32 data[1];
-};
-
-struct hfi_session_empty_buffer_uncompressed_plane0_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 view_id;
-	u32 time_stamp_hi;
-	u32 time_stamp_lo;
-	u32 flags;
-	u32 mark_target;
-	u32 mark_data;
-	u32 alloc_len;
-	u32 filled_len;
-	u32 offset;
-	u32 input_tag;
-	u32 packet_buffer;
-	u32 extradata_buffer;
-	u32 data[1];
-};
-
-struct hfi_session_empty_buffer_uncompressed_plane1_pkt {
-	u32 flags;
-	u32 alloc_len;
-	u32 filled_len;
-	u32 offset;
-	u32 packet_buffer2;
-	u32 data[1];
-};
-
-struct hfi_session_empty_buffer_uncompressed_plane2_pkt {
-	u32 flags;
-	u32 alloc_len;
-	u32 filled_len;
-	u32 offset;
-	u32 packet_buffer3;
-	u32 data[1];
-};
-
-struct hfi_session_fill_buffer_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 stream_id;
-	u32 offset;
-	u32 alloc_len;
-	u32 filled_len;
-	u32 output_tag;
-	u32 packet_buffer;
-	u32 extradata_buffer;
-	u32 data[1];
-};
-
-struct hfi_session_flush_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 flush_type;
-};
-
-struct hfi_session_suspend_pkt {
-	struct hfi_session_hdr_pkt shdr;
-};
-
-struct hfi_session_resume_pkt {
-	struct hfi_session_hdr_pkt shdr;
-};
-
-struct hfi_session_get_property_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 num_properties;
-	u32 data[1];
-};
-
-struct hfi_session_release_buffer_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 buffer_type;
-	u32 buffer_size;
-	u32 extradata_size;
-	u32 response_req;
-	u32 num_buffers;
-	u32 buffer_info[1];
-};
-
-struct hfi_session_release_resources_pkt {
-	struct hfi_session_hdr_pkt shdr;
-};
-
-struct hfi_session_parse_sequence_header_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 header_len;
-	u32 packet_buffer;
-};
-
-/* message packets */
-struct hfi_msg_event_notify_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 event_id;
-	u32 event_data1;
-	u32 event_data2;
-	u32 ext_event_data[1];
-};
-
-struct hfi_msg_event_release_buffer_ref_pkt {
-	u32 packet_buffer;
-	u32 extradata_buffer;
-	u32 output_tag;
-};
-
-struct hfi_msg_sys_init_done_pkt {
-	struct hfi_pkt_hdr hdr;
-	u32 error_type;
-	u32 num_properties;
-	u32 data[1];
-};
-
-struct hfi_msg_sys_pc_prep_done_pkt {
-	struct hfi_pkt_hdr hdr;
-	u32 error_type;
-};
-
-struct hfi_msg_sys_release_resource_done_pkt {
-	struct hfi_pkt_hdr hdr;
-	u32 resource_handle;
-	u32 error_type;
-};
-
-struct hfi_msg_session_init_done_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 error_type;
-	u32 num_properties;
-	u32 data[1];
-};
-
-struct hfi_msg_session_end_done_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 error_type;
-};
-
-struct hfi_msg_session_get_sequence_hdr_done_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 error_type;
-	u32 header_len;
-	u32 sequence_header;
-};
-
-struct hfi_msg_sys_session_abort_done_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 error_type;
-};
-
-struct hfi_msg_sys_idle_pkt {
-	struct hfi_pkt_hdr hdr;
-};
-
-struct hfi_msg_sys_ping_ack_pkt {
-	struct hfi_pkt_hdr hdr;
-	u32 client_data;
-};
-
-struct hfi_msg_sys_property_info_pkt {
-	struct hfi_pkt_hdr hdr;
-	u32 num_properties;
-	u32 data[1];
-};
-
-struct hfi_msg_session_load_resources_done_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 error_type;
-};
-
-struct hfi_msg_session_start_done_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 error_type;
-};
-
-struct hfi_msg_session_stop_done_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 error_type;
-};
-
-struct hfi_msg_session_suspend_done_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 error_type;
-};
-
-struct hfi_msg_session_resume_done_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 error_type;
-};
-
-struct hfi_msg_session_flush_done_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 error_type;
-	u32 flush_type;
-};
-
-struct hfi_msg_session_empty_buffer_done_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 error_type;
-	u32 offset;
-	u32 filled_len;
-	u32 input_tag;
-	u32 packet_buffer;
-	u32 extradata_buffer;
-	u32 data[0];
-};
-
-struct hfi_msg_session_fbd_compressed_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 time_stamp_hi;
-	u32 time_stamp_lo;
-	u32 error_type;
-	u32 flags;
-	u32 mark_target;
-	u32 mark_data;
-	u32 stats;
-	u32 offset;
-	u32 alloc_len;
-	u32 filled_len;
-	u32 input_tag;
-	u32 output_tag;
-	u32 picture_type;
-	u32 packet_buffer;
-	u32 extradata_buffer;
-	u32 data[0];
-};
-
-struct hfi_msg_session_fbd_uncompressed_plane0_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 stream_id;
-	u32 view_id;
-	u32 error_type;
-	u32 time_stamp_hi;
-	u32 time_stamp_lo;
-	u32 flags;
-	u32 mark_target;
-	u32 mark_data;
-	u32 stats;
-	u32 alloc_len;
-	u32 filled_len;
-	u32 offset;
-	u32 frame_width;
-	u32 frame_height;
-	u32 start_x_coord;
-	u32 start_y_coord;
-	u32 input_tag;
-	u32 input_tag2;
-	u32 output_tag;
-	u32 picture_type;
-	u32 packet_buffer;
-	u32 extradata_buffer;
-	u32 data[0];
-};
-
-struct hfi_msg_session_fbd_uncompressed_plane1_pkt {
-	u32 flags;
-	u32 alloc_len;
-	u32 filled_len;
-	u32 offset;
-	u32 packet_buffer2;
-	u32 data[0];
-};
-
-struct hfi_msg_session_fbd_uncompressed_plane2_pkt {
-	u32 flags;
-	u32 alloc_len;
-	u32 filled_len;
-	u32 offset;
-	u32 packet_buffer3;
-	u32 data[0];
-};
-
-struct hfi_msg_session_parse_sequence_header_done_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 error_type;
-	u32 num_properties;
-	u32 data[1];
-};
-
-struct hfi_msg_session_property_info_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 num_properties;
-	u32 data[1];
-};
-
-struct hfi_msg_session_release_resources_done_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 error_type;
-};
-
-struct hfi_msg_session_release_buffers_done_pkt {
-	struct hfi_session_hdr_pkt shdr;
-	u32 error_type;
-	u32 num_buffers;
-	u32 buffer_info[1];
-};
-
-struct hfi_msg_sys_debug_pkt {
-	struct hfi_pkt_hdr hdr;
-	u32 msg_type;
-	u32 msg_size;
-	u32 time_stamp_hi;
-	u32 time_stamp_lo;
-	u8 msg_data[1];
-};
-
-struct hfi_msg_sys_coverage_pkt {
-	struct hfi_pkt_hdr hdr;
-	u32 msg_size;
-	u32 time_stamp_hi;
-	u32 time_stamp_lo;
-	u8 msg_data[1];
-};
-
-struct hfi_sfr {
-	u32 buf_size;
-	u8 data[1];
-};
-
-struct hfi_sys_test_ssr_pkt {
-	struct hfi_pkt_hdr hdr;
-	u32 trigger_type;
 };
 
 #endif

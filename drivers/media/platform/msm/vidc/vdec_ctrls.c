@@ -15,7 +15,7 @@
 #include <linux/types.h>
 #include <media/v4l2-ctrls.h>
 
-#include "common.h"
+#include "core.h"
 
 static struct vidc_ctrl vdec_ctrls[] = {
 	{

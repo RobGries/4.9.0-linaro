@@ -15,7 +15,7 @@
 #include <linux/types.h>
 #include <media/v4l2-ctrls.h>
 
-#include "common.h"
+#include "core.h"
 
 #define BITRATE_MIN		32000
 #define BITRATE_MAX		160000000

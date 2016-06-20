@@ -46,6 +46,13 @@
 
 #define POLL_INTERVAL_US		50
 
+#define IFACEQ_MAX_PKT_SIZE		1024
+#define IFACEQ_MED_PKT_SIZE		768
+#define IFACEQ_MIN_PKT_SIZE		8
+#define IFACEQ_VAR_SMALL_PKT_SIZE	100
+#define IFACEQ_VAR_LARGE_PKT_SIZE	512
+#define IFACEQ_VAR_HUGE_PKT_SIZE	(1024 * 12)
+
 enum tzbsp_video_state {
 	TZBSP_VIDEO_STATE_SUSPEND = 0,
 	TZBSP_VIDEO_STATE_RESUME
@@ -81,7 +88,7 @@ struct hfi_queue_header {
 	(sizeof(struct hfi_queue_table_header) +	\
 	 sizeof(struct hfi_queue_header) * IFACEQ_NUM)
 
-#define IFACEQ_QUEUE_SIZE	(VIDC_IFACEQ_MAX_PKT_SIZE *	\
+#define IFACEQ_QUEUE_SIZE	(IFACEQ_MAX_PKT_SIZE *	\
 	IFACEQ_MAX_BUF_COUNT * IFACEQ_MAX_PARALLEL_CLNTS)
 
 #define IFACEQ_GET_QHDR_START_ADDR(ptr, i)	\
@@ -132,8 +139,8 @@ struct venus_hfi_device {
 	enum venus_state state;
 	const struct hfi_packetization_ops *pkt_ops;
 	enum hfi_packetization_type packetization_type;
-	u8 pkt_buf[VIDC_IFACEQ_VAR_HUGE_PKT_SIZE];
-	u8 dbg_buf[VIDC_IFACEQ_VAR_HUGE_PKT_SIZE];
+	u8 pkt_buf[IFACEQ_VAR_HUGE_PKT_SIZE];
+	u8 dbg_buf[IFACEQ_VAR_HUGE_PKT_SIZE];
 };
 
 static bool venus_pkt_debug = 0;
@@ -300,8 +307,7 @@ static int venus_read_queue(struct venus_hfi_device *hdev,
 		return -EINVAL;
 
 	new_rd_idx = rd_idx + dwords;
-	if (((dwords << 2) <= VIDC_IFACEQ_VAR_HUGE_PKT_SIZE) &&
-	    rd_idx <= qsize) {
+	if (((dwords << 2) <= IFACEQ_VAR_HUGE_PKT_SIZE) && rd_idx <= qsize) {
 		if (new_rd_idx < qsize) {
 			memcpy(pkt, rd_ptr, dwords << 2);
 		} else {
@@ -443,7 +449,7 @@ venus_hfi_core_set_resource(void *device, struct hal_resource_hdr *hdr,
 {
 	struct venus_hfi_device *hdev = device;
 	struct hfi_sys_set_resource_pkt *pkt;
-	u8 packet[VIDC_IFACEQ_VAR_SMALL_PKT_SIZE];
+	u8 packet[IFACEQ_VAR_SMALL_PKT_SIZE];
 	int ret;
 
 	pkt = (struct hfi_sys_set_resource_pkt *) packet;
@@ -806,7 +812,7 @@ static int venus_interface_queues_init(struct venus_hfi_device *hdev)
 static int venus_sys_set_debug(struct venus_hfi_device *hdev, u32 debug)
 {
 	struct hfi_sys_set_property_pkt *pkt;
-	u8 packet[VIDC_IFACEQ_VAR_SMALL_PKT_SIZE];
+	u8 packet[IFACEQ_VAR_SMALL_PKT_SIZE];
 	int ret;
 
 	pkt = (struct hfi_sys_set_property_pkt *) &packet;
@@ -824,7 +830,7 @@ static int venus_sys_set_debug(struct venus_hfi_device *hdev, u32 debug)
 static int venus_sys_set_coverage(struct venus_hfi_device *hdev, u32 mode)
 {
 	struct hfi_sys_set_property_pkt *pkt;
-	u8 packet[VIDC_IFACEQ_VAR_SMALL_PKT_SIZE];
+	u8 packet[IFACEQ_VAR_SMALL_PKT_SIZE];
 	int ret;
 
 	pkt = (struct hfi_sys_set_property_pkt *) packet;
@@ -842,7 +848,7 @@ static int venus_sys_set_idle_message(struct venus_hfi_device *hdev,
 				      bool enable)
 {
 	struct hfi_sys_set_property_pkt *pkt;
-	u8 packet[VIDC_IFACEQ_VAR_SMALL_PKT_SIZE];
+	u8 packet[IFACEQ_VAR_SMALL_PKT_SIZE];
 	int ret;
 
 	if (!enable)
@@ -863,7 +869,7 @@ static int venus_sys_set_power_control(struct venus_hfi_device *hdev,
 				       bool enable)
 {
 	struct hfi_sys_set_property_pkt *pkt;
-	u8 packet[VIDC_IFACEQ_VAR_SMALL_PKT_SIZE];
+	u8 packet[IFACEQ_VAR_SMALL_PKT_SIZE];
 	int ret;
 
 	pkt = (struct hfi_sys_set_property_pkt *) packet;
@@ -1049,7 +1055,7 @@ static irqreturn_t venus_isr_thread(int irq, struct hfi_device *hfi)
 		case HFI_MSG_SYS_RELEASE_RESOURCE:
 			complete(&release_resources_done);
 			break;
-		case HFI_MSG_SYS_PC_PREP_DONE:
+		case HFI_MSG_SYS_PC_PREP:
 			complete(&pc_prep_done);
 			break;
 		default:
@@ -1290,7 +1296,7 @@ static int venus_hfi_session_set_buffers(struct hfi_device_inst *inst,
 {
 	struct venus_hfi_device *hdev = inst->device;
 	struct hfi_session_set_buffers_pkt *pkt;
-	u8 packet[VIDC_IFACEQ_VAR_LARGE_PKT_SIZE];
+	u8 packet[IFACEQ_VAR_LARGE_PKT_SIZE];
 	int ret;
 
 	if (bai->buffer_type == HAL_BUFFER_INPUT)
@@ -1310,7 +1316,7 @@ static int venus_hfi_session_release_buffers(struct hfi_device_inst *inst,
 {
 	struct venus_hfi_device *hdev = inst->device;
 	struct hfi_session_release_buffer_pkt *pkt;
-	u8 packet[VIDC_IFACEQ_VAR_LARGE_PKT_SIZE];
+	u8 packet[IFACEQ_VAR_LARGE_PKT_SIZE];
 	int ret;
 
 	if (bai->buffer_type == HAL_BUFFER_INPUT)
@@ -1340,7 +1346,7 @@ static int venus_hfi_session_parse_seq_hdr(struct hfi_device_inst *inst,
 {
 	struct venus_hfi_device *hdev = inst->device;
 	struct hfi_session_parse_sequence_header_pkt *pkt;
-	u8 packet[VIDC_IFACEQ_VAR_SMALL_PKT_SIZE];
+	u8 packet[IFACEQ_VAR_SMALL_PKT_SIZE];
 	int ret;
 
 	pkt = (struct hfi_session_parse_sequence_header_pkt *) packet;
@@ -1362,7 +1368,7 @@ static int venus_hfi_session_get_seq_hdr(struct hfi_device_inst *inst,
 {
 	struct venus_hfi_device *hdev = inst->device;
 	struct hfi_session_get_sequence_header_pkt *pkt;
-	u8 packet[VIDC_IFACEQ_VAR_SMALL_PKT_SIZE];
+	u8 packet[IFACEQ_VAR_SMALL_PKT_SIZE];
 	int ret;
 
 	pkt = (struct hfi_session_get_sequence_header_pkt *) packet;
@@ -1379,7 +1385,7 @@ static int venus_hfi_session_set_property(struct hfi_device_inst *inst,
 {
 	struct venus_hfi_device *hdev = inst->device;
 	struct hfi_session_set_property_pkt *pkt;
-	u8 packet[VIDC_IFACEQ_VAR_LARGE_PKT_SIZE];
+	u8 packet[IFACEQ_VAR_LARGE_PKT_SIZE];
 	int ret;
 
 	pkt = (struct hfi_session_set_property_pkt *) packet;
