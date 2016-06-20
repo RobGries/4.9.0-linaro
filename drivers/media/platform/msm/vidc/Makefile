@@ -3,7 +3,7 @@
 vidc-objs += \
 		core.o \
 		int_bufs.o \
-		common.o \
+		helpers.o \
 		vdec.o \
 		vdec_ctrls.o \
 		venc.o \
