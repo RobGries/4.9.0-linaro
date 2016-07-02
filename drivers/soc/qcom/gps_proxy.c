@@ -52,6 +52,7 @@ MODULE_LICENSE("GPL v2");
 static struct tty_driver *gps_proxy_tty_driver;
 static struct tty_port gps_proxy_tty_port;
 static bool g_port_open = false;
+static bool g_was_interrupted = false;
 static struct semaphore g_port_sem;
 static int gps_proxy_ch_driver_major = 0;
 static struct class* gps_proxy_ch_class = 0;
@@ -156,11 +157,15 @@ long gps_proxy_chdev_ioctl(struct file *filp, unsigned int opt, unsigned long ar
 	{
 		case QGPS_REGISTER_HANDLE:
 			/* DOWN is necessary to make client wait till port is open */
-			down(&g_port_sem);
+			if (!down_killable(&g_port_sem)) {
 			/* UP to semaphore is necessary here for close or
 			next register handle (for parity) */
-			up(&g_port_sem);
-			rc = 0;
+				up(&g_port_sem);
+				rc = 0;
+			}
+			else {
+				rc = -EFAULT;
+			}
 			break;
 		case QGPS_SEND_NMEA:
 			pr_debug(KERN_INFO "Received string: %s\n", 
