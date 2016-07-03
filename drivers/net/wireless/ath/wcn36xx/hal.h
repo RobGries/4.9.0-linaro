@@ -51,7 +51,7 @@
 #define WCN36XX_HAL_STA_INVALID_IDX 0xFF
 #define WCN36XX_HAL_BSS_INVALID_IDX 0xFF
 
-/* Default Beacon template size. */
+/* Default Beacon template size */
 #define BEACON_TEMPLATE_SIZE 0x180
 
 /* Minimum PVM size that the FW expects. See comment in smd.c for details. */
@@ -2889,11 +2889,13 @@ struct update_beacon_rsp_msg {
 struct wcn36xx_hal_send_beacon_req_msg {
 	struct wcn36xx_hal_msg_header header;
 
-	/* length of the template + sizeof(beacon_length) */
-	u32 template_length;
+	/* length of the template + 6. Only qcom knows why */
+	u32 beacon_length6;
+
+	/* length of the template. */
+	u32 beacon_length;
 
 	/* Beacon data. */
-	u32 beacon_length;
 	u8 beacon[BEACON_TEMPLATE_SIZE - sizeof(u32)];
 
 	u8 bssid[ETH_ALEN];
@@ -4123,7 +4125,7 @@ struct wcn36xx_hal_update_scan_params_req {
 
 /* Update scan params - sent from host to PNO to be used during PNO
  * scanningx */
-struct update_scan_params_req_ex {
+struct wcn36xx_hal_update_scan_params_req_ex {
 
 	struct wcn36xx_hal_msg_header header;
 
@@ -4151,7 +4153,7 @@ struct update_scan_params_req_ex {
 
 	/* Cb State */
 	enum phy_chan_bond_state state;
-};
+} __packed;
 
 /* Update scan params - sent from host to PNO to be used during PNO
  * scanningx */
@@ -4702,5 +4704,19 @@ struct stats_class_b_ind {
 	u32 rx_packets_rcvd;
 	u32 rx_time_total;
 };
+
+/* WCN36XX_HAL_PRINT_REG_INFO_IND */
+struct wcn36xx_hal_print_reg_info_ind {
+	struct wcn36xx_hal_msg_header header;
+
+	u32 count;
+	u32 scenario;
+	u32 reason;
+
+	struct {
+		u32 addr;
+		u32 value;
+	} regs[];
+} __packed;
 
 #endif /* _HAL_H_ */

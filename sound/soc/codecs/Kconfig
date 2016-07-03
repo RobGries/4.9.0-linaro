@@ -501,7 +501,7 @@ config SND_SOC_MAX98925
 config SND_SOC_MAX9850
 	tristate
 
-config SND_SOC_MSM8x16_WCD
+config SND_SOC_MSM8916_WCD
 	tristate "Qualcomm MSM8x16 WCD"
 	depends on SPMI && MFD_SYSCON
 
