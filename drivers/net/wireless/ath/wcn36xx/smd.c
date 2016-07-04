@@ -19,7 +19,7 @@
 #include <linux/etherdevice.h>
 #include <linux/firmware.h>
 #include <linux/bitops.h>
-#include <linux/soc/qcom/smd.h>
+#include <linux/rpmsg.h>
 #include "smd.h"
 
 struct wcn36xx_cfg_val {
@@ -254,7 +254,7 @@ static int wcn36xx_smd_send_and_wait(struct wcn36xx *wcn, size_t len)
 
 	init_completion(&wcn->hal_rsp_compl);
 	start = jiffies;
-	ret = qcom_smd_send(wcn->smd_channel, wcn->hal_buf, len);
+	ret = rpmsg_send(wcn->smd_channel, wcn->hal_buf, len);
 	if (ret) {
 		wcn36xx_err("HAL TX failed\n");
 		goto out;
@@ -2205,18 +2205,16 @@ out:
 	return ret;
 }
 
-int wcn36xx_smd_rsp_process(struct qcom_smd_channel *channel,
-			    const void *buf, size_t len)
+int wcn36xx_smd_rsp_process(struct rpmsg_device *rpdev,
+			    void *buf, int len, void *priv, u32 addr)
 {
-	struct wcn36xx_hal_msg_header msg_header;
-	struct ieee80211_hw *hw = qcom_smd_get_drvdata(channel);
+	const struct wcn36xx_hal_msg_header *msg_header = buf;
+	struct ieee80211_hw *hw = priv;
 	struct wcn36xx *wcn = hw->priv;
 	struct wcn36xx_hal_ind_msg *msg_ind;
 	wcn36xx_dbg_dump(WCN36XX_DBG_SMD_DUMP, "SMD <<< ", buf, len);
 
-	memcpy_fromio(&msg_header, buf, sizeof(struct wcn36xx_hal_msg_header));
-
-	switch (msg_header.msg_type) {
+	switch (msg_header->msg_type) {
 	case WCN36XX_HAL_START_RSP:
 	case WCN36XX_HAL_CONFIG_STA_RSP:
 	case WCN36XX_HAL_CONFIG_BSS_RSP:
@@ -2252,7 +2250,7 @@ int wcn36xx_smd_rsp_process(struct qcom_smd_channel *channel,
 	case WCN36XX_HAL_CH_SWITCH_RSP:
 	case WCN36XX_HAL_FEATURE_CAPS_EXCHANGE_RSP:
 	case WCN36XX_HAL_8023_MULTICAST_LIST_RSP:
-		memcpy_fromio(wcn->hal_buf, buf, len);
+		memcpy(wcn->hal_buf, buf, len);
 		wcn->hal_rsp_len = len;
 		complete(&wcn->hal_rsp_compl);
 		break;
@@ -2266,17 +2264,13 @@ int wcn36xx_smd_rsp_process(struct qcom_smd_channel *channel,
 	case WCN36XX_HAL_PRINT_REG_INFO_IND:
 		msg_ind = kmalloc(sizeof(*msg_ind) + len, GFP_ATOMIC);
 		if (!msg_ind) {
-			/*
-			 * FIXME: Do something smarter then just
-			 * printing an error.
-			 */
 			wcn36xx_err("Run out of memory while handling SMD_EVENT (%d)\n",
-				    msg_header.msg_type);
-			break;
+				    msg_header->msg_type);
+			return -ENOMEM;
 		}
 
 		msg_ind->msg_len = len;
-		memcpy_fromio(msg_ind->msg, buf, len);
+		memcpy(msg_ind->msg, buf, len);
 
 		spin_lock(&wcn->hal_ind_lock);
 		list_add_tail(&msg_ind->list, &wcn->hal_ind_queue);
@@ -2286,7 +2280,7 @@ int wcn36xx_smd_rsp_process(struct qcom_smd_channel *channel,
 		break;
 	default:
 		wcn36xx_err("SMD_EVENT (%d) not supported\n",
-			      msg_header.msg_type);
+			      msg_header->msg_type);
 	}
 
 	return 0;
