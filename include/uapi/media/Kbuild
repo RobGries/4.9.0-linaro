@@ -1,2 +1,0 @@
-header-y += msm_vidc.h
-header-y += msm-v4l2-controls.h

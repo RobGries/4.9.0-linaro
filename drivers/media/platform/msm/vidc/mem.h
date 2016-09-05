@@ -12,13 +12,34 @@
  * GNU General Public License for more details.
  *
  */
-#ifndef __VENUS_HFI_H__
-#define __VENUS_HFI_H__
 
-struct hfi_device;
-struct vidc_resources;
+#ifndef __VIDC_SMEM_H__
+#define __VIDC_SMEM_H__
 
-void venus_hfi_destroy(struct hfi_device *hfi);
-int venus_hfi_create(struct hfi_device *hfi, struct vidc_resources *res);
+#include <linux/dma-attrs.h>
 
-#endif
+enum smem_cache_ops {
+	SMEM_CACHE_CLEAN,
+	SMEM_CACHE_INVALIDATE,
+	SMEM_CACHE_CLEAN_INVALIDATE,
+};
+
+struct device;
+struct sg_table;
+
+struct smem {
+	size_t size;
+	void *kvaddr;
+	dma_addr_t da;
+	struct dma_attrs attrs;
+	struct device *iommu_dev;
+	struct sg_table *sgt;
+};
+
+struct smem *smem_alloc(struct device *dev, size_t size, u32 align,
+			int map_kernel);
+void smem_free(struct smem *mem);
+
+int smem_dma_sync_cache(struct smem *mem, enum smem_cache_ops);
+
+#endif /* __VIDC_SMEM_H__ */

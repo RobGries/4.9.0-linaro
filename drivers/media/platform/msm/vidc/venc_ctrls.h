@@ -12,13 +12,12 @@
  * GNU General Public License for more details.
  *
  */
-#ifndef __VENUS_HFI_H__
-#define __VENUS_HFI_H__
+#ifndef __VIDC_VENC_CTRLS_H__
+#define __VIDC_VENC_CTRLS_H__
 
-struct hfi_device;
-struct vidc_resources;
+struct vidc_inst;
 
-void venus_hfi_destroy(struct hfi_device *hfi);
-int venus_hfi_create(struct hfi_device *hfi, struct vidc_resources *res);
+int venc_ctrl_init(struct vidc_inst *inst);
+void venc_ctrl_deinit(struct vidc_inst *inst);
 
 #endif

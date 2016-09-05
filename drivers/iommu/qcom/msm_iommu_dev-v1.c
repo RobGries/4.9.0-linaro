@@ -28,8 +28,9 @@
 
 #include "msm_iommu_hw-v1.h"
 #include <linux/qcom_iommu.h>
-#include "msm_iommu_perfmon.h"
 #include <linux/qcom_scm.h>
+#include "msm_iommu_perfmon.h"
+#include "msm_iommu_priv.h"
 
 static const struct of_device_id msm_iommu_ctx_match_table[];
 
@@ -471,11 +472,15 @@ static int msm_iommu_probe(struct platform_device *pdev)
 				global_client_irq, ret);
 	}
 
-	ret = of_platform_populate(np, msm_iommu_ctx_match_table, NULL, dev);
-	if (ret)
-		dev_err(dev, "Failed to create iommu context device\n");
+	INIT_LIST_HEAD(&drvdata->masters);
 
-	return ret;
+	ret = of_platform_populate(np, msm_iommu_ctx_match_table, NULL, dev);
+	if (ret) {
+		dev_err(dev, "Failed to create iommu context device\n");
+		return ret;
+	}
+
+	return msm_iommu_init(&pdev->dev);
 }
 
 static int msm_iommu_remove(struct platform_device *pdev)
@@ -506,6 +511,8 @@ static int msm_iommu_ctx_parse_dt(struct platform_device *pdev,
 	unsigned long cb_offset;
 
 	drvdata = dev_get_drvdata(pdev->dev.parent);
+	if (!drvdata)
+		return -EPROBE_DEFER;
 
 	get_secure_ctx(pdev->dev.of_node, drvdata, ctx_drvdata);
 
