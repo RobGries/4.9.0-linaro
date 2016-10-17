@@ -1185,6 +1185,10 @@
 				compatible = "qcom,ipcrtr";
 				qcom,smd-channels = "IPCRTR";
 			};
+			fastrpc {
+				compatible = "qcom,fastrpc";
+				qcom,smd-channels = "fastrpcsmd-apps-dsp";
+			};
 		};
 
 		pronto {
