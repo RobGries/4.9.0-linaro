@@ -1661,7 +1661,7 @@ static int msm_iommu_of_xlate(struct device *dev, struct of_phandle_args *args)
 	dev_dbg(dev, "adding master for device %s\n", dev_name(dev));
 
 	list_add_tail(&master->list, &iommu_masters);
-
+#if 0
 	if (dev->bus && dev->bus->iommu_ops) {
 		ret = dev->bus->iommu_ops->add_device(dev);
 		if (ret) {
@@ -1672,7 +1672,7 @@ static int msm_iommu_of_xlate(struct device *dev, struct of_phandle_args *args)
 		dev_err(dev, "of_xlate missing iommu_ops for bus\n");
 		return -ENODEV;
 	}
-
+#endif
 	return 0;
 }
 

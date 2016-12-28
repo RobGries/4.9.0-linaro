@@ -28,8 +28,8 @@
 
 #include "msm_iommu_hw-v1.h"
 #include <linux/qcom_iommu.h>
-#include <linux/qcom_scm.h>
 #include "msm_iommu_perfmon.h"
+#include <linux/qcom_scm.h>
 #include "msm_iommu_priv.h"
 
 static const struct of_device_id msm_iommu_ctx_match_table[];
@@ -445,8 +445,8 @@ static int msm_iommu_probe(struct platform_device *pdev)
 		ret = devm_request_threaded_irq(dev, global_cfg_irq,
 						NULL,
 						msm_iommu_global_fault_handler,
-						IRQF_ONESHOT | IRQF_SHARED |
-						IRQF_TRIGGER_RISING,
+						IRQF_ONESHOT | IRQF_SHARED /*|
+						IRQF_TRIGGER_RISING*/,
 						"msm_iommu_global_cfg_irq",
 						pdev);
 		if (ret < 0)
@@ -463,8 +463,8 @@ static int msm_iommu_probe(struct platform_device *pdev)
 		ret = devm_request_threaded_irq(dev, global_client_irq,
 						NULL,
 						msm_iommu_global_fault_handler,
-						IRQF_ONESHOT | IRQF_SHARED |
-						IRQF_TRIGGER_RISING,
+						IRQF_ONESHOT | IRQF_SHARED /*|
+						IRQF_TRIGGER_RISING*/,
 						"msm_iommu_global_client_irq",
 						pdev);
 		if (ret < 0)
