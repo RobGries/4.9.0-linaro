@@ -101,9 +101,14 @@ config VIDEO_OMAP3_DEBUG
 	  Enable debug messages on OMAP 3 camera controller driver.
 
 config VIDEO_QCOM_CAMSS
-        tristate "Qualcomm 8x16 V4L2 Camera Subsystem driver"
-        depends on ARCH_QCOM && VIDEO_V4L2
-        select VIDEOBUF2_DMA_CONTIG
+	tristate "Qualcomm 8x16 V4L2 Camera Subsystem driver"
+	depends on ARCH_QCOM && VIDEO_V4L2
+	depends on IOMMU_DMA
+	select VIDEOBUF2_DMA_SG
+
+config MSM_CCI
+	tristate "Qualcomm MSM camera control interface driver"
+	depends on ARCH_QCOM && VIDEO_V4L2
 
 config VIDEO_S3C_CAMIF
 	tristate "Samsung S3C24XX/S3C64XX SoC Camera Interface driver"
@@ -124,7 +129,6 @@ source "drivers/media/platform/exynos4-is/Kconfig"
 source "drivers/media/platform/s5p-tv/Kconfig"
 source "drivers/media/platform/am437x/Kconfig"
 source "drivers/media/platform/xilinx/Kconfig"
-source "drivers/media/platform/qcom/Kconfig"
 
 endif # V4L_PLATFORM_DRIVERS
 
