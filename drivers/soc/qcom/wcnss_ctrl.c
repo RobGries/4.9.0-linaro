@@ -335,8 +335,6 @@ static int wcnss_ctrl_probe(struct rpmsg_device *rpdev)
 
 	dev_set_drvdata(&rpdev->dev, wcnss);
 
-	qcom_smd_set_drvdata(sdev->channel, wcnss);
-
 	schedule_work(&wcnss->probe_work);
 
 	return 0;
