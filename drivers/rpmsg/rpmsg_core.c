@@ -402,22 +402,24 @@ static int rpmsg_dev_probe(struct device *dev)
 	struct rpmsg_device *rpdev = to_rpmsg_device(dev);
 	struct rpmsg_driver *rpdrv = to_rpmsg_driver(rpdev->dev.driver);
 	struct rpmsg_channel_info chinfo = {};
-	struct rpmsg_endpoint *ept;
+	struct rpmsg_endpoint *ept = NULL;
 	int err;
 
-	strncpy(chinfo.name, rpdev->id.name, RPMSG_NAME_SIZE);
-	chinfo.src = rpdev->src;
-	chinfo.dst = RPMSG_ADDR_ANY;
+	if (rpdrv->callback) {
+		strncpy(chinfo.name, rpdev->id.name, RPMSG_NAME_SIZE);
+		chinfo.src = rpdev->src;
+		chinfo.dst = RPMSG_ADDR_ANY;
 
-	ept = rpmsg_create_ept(rpdev, rpdrv->callback, NULL, chinfo);
-	if (!ept) {
-		dev_err(dev, "failed to create endpoint\n");
-		err = -ENOMEM;
-		goto out;
+		ept = rpmsg_create_ept(rpdev, rpdrv->callback, NULL, chinfo);
+		if (!ept) {
+			dev_err(dev, "failed to create endpoint\n");
+			err = -ENOMEM;
+			goto out;
+		}
+
+		rpdev->ept = ept;
+		rpdev->src = ept->addr;
 	}
-
-	rpdev->ept = ept;
-	rpdev->src = ept->addr;
 
 	err = rpdrv->probe(rpdev);
 	if (err) {
