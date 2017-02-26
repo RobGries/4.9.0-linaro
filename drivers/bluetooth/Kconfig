@@ -171,7 +171,7 @@ config BT_HCIUART_QCA
 
 config BT_QCOMSMD
 	tristate "Qualcomm SMD based HCI support"
-	depends on QCOM_SMD
+	depends on RPMSG || RPMSG=n
 	select BT_QCA
 	help
 	  Qualcomm SMD based HCI driver.
