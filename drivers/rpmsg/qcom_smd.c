@@ -831,8 +831,8 @@ qcom_smd_find_channel(struct qcom_smd_edge *edge, const char *name)
 			continue;
 
 		state = GET_RX_CHANNEL_INFO(channel, state);
-		if (state != SMD_CHANNEL_OPENING &&
-		    state != SMD_CHANNEL_OPENED)
+		if (state == SMD_CHANNEL_OPENING &&
+		    state == SMD_CHANNEL_OPENED)
 			continue;
 
 		ret = channel;
