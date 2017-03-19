@@ -59,6 +59,7 @@ static int create_iec958_consumer(uint rate, uint sample_width,
 			     IEC958_AES4_CON_MAX_WORDLEN_24;
 			break;
 		case 24:
+		case 32: /* Assume 24-bit width for 32-bit samples. */
 			ws = IEC958_AES4_CON_WORDLEN_24_20 |
 			     IEC958_AES4_CON_MAX_WORDLEN_24;
 			break;
@@ -103,7 +104,19 @@ int snd_pcm_create_iec958_consumer(struct snd_pcm_runtime *runtime, u8 *cs,
 }
 EXPORT_SYMBOL(snd_pcm_create_iec958_consumer);
 
-
+/**
+ * snd_pcm_create_iec958_consumer_hw_params - create IEC958 channel status
+ * @hw_params: the hw_params instance for extracting rate and sample format
+ * @cs: channel status buffer, at least four bytes
+ * @len: length of channel status buffer
+ *
+ * Create the consumer format channel status data in @cs of maximum size
+ * @len corresponding to the parameters of the PCM runtime @runtime.
+ *
+ * Drivers may wish to tweak the contents of the buffer after creation.
+ *
+ * Returns: length of buffer, or negative error code if something failed.
+ */
 int snd_pcm_create_iec958_consumer_hw_params(struct snd_pcm_hw_params *params,
 					     u8 *cs, size_t len)
 {

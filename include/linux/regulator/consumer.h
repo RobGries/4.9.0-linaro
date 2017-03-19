@@ -221,7 +221,6 @@ int regulator_bulk_force_disable(int num_consumers,
 void regulator_bulk_free(int num_consumers,
 			 struct regulator_bulk_data *consumers);
 
-int regulator_can_change_voltage(struct regulator *regulator);
 int regulator_count_voltages(struct regulator *regulator);
 int regulator_list_voltage(struct regulator *regulator, unsigned selector);
 int regulator_is_supported_voltage(struct regulator *regulator,
@@ -433,11 +432,6 @@ static inline void regulator_bulk_free(int num_consumers,
 {
 }
 
-static inline int regulator_can_change_voltage(struct regulator *regulator)
-{
-	return 0;
-}
-
 static inline int regulator_set_voltage(struct regulator *regulator,
 					int min_uV, int max_uV)
 {
@@ -584,6 +578,13 @@ static inline int regulator_is_supported_voltage_tol(struct regulator *regulator
 	return regulator_is_supported_voltage(regulator,
 					      target_uV - tol_uV,
 					      target_uV + tol_uV);
+}
+
+/* TEMP: Wrapper to keep bisectability */
+static inline int regulator_set_optimum_mode(struct regulator *regulator,
+					     int load_uA)
+{
+	return regulator_set_load(regulator, load_uA);
 }
 
 #endif

@@ -35,7 +35,7 @@
 #include "msm_iommu_perfmon.h"
 #include "msm_iommu_hw-v1.h"
 #include "msm_iommu_priv.h"
-#include <linux/qcom_iommu.h>
+#include "qcom_iommu.h"
 #include <trace/events/kmem.h>
 
 /* bitmap of the page sizes currently supported */
@@ -120,12 +120,12 @@ static int msm_iommu_dump_fault_regs(int smmu_id, int cb_num,
 {
 	int ret;
 
-	dmac_clean_range(regs, regs + 1);
+	__dma_flush_area(regs, sizeof(*regs));
 
 	ret = qcom_scm_iommu_dump_fault_regs(smmu_id, cb_num,
 					     virt_to_phys(regs), sizeof(*regs));
 
-	dmac_inv_range(regs, regs + 1);
+	__dma_flush_area(regs, sizeof(*regs));
 
 	return ret;
 }
@@ -243,7 +243,7 @@ irqreturn_t msm_iommu_secure_fault_handler_v2(int irq, void *dev_id)
 	ctx_drvdata = dev_get_drvdata(&pdev->dev);
 	BUG_ON(!ctx_drvdata);
 
-	regs = kzalloc(sizeof(*regs), GFP_KERNEL);
+	regs = kzalloc(sizeof(*regs), GFP_ATOMIC);
 	if (!regs) {
 		pr_err("%s: Couldn't allocate memory\n", __func__);
 		goto lock_release;
@@ -261,10 +261,8 @@ irqreturn_t msm_iommu_secure_fault_handler_v2(int irq, void *dev_id)
 		goto free_regs;
 	}
 
-	iommu_access_ops->iommu_clk_on(drvdata);
 	tmp = msm_iommu_dump_fault_regs(drvdata->sec_id,
 					ctx_drvdata->num, regs);
-	iommu_access_ops->iommu_clk_off(drvdata);
 
 	if (tmp) {
 		pr_err("%s: Couldn't dump fault registers (%d) %s, ctx: %d\n",
@@ -375,7 +373,7 @@ static int msm_iommu_sec_ptbl_map(struct msm_iommu_drvdata *iommu_drvdata,
 	/*
 	 * Ensure that the buffer is in RAM by the time it gets to TZ
 	 */
-	dmac_clean_range(flush_va, flush_va_end);
+	__dma_flush_area(flush_va, sizeof(phys_addr_t));
 
 	ret = msm_iommu_sec_map2(&map);
 	if (ret)
@@ -476,7 +474,7 @@ static int msm_iommu_sec_ptbl_map_range(struct msm_iommu_drvdata *iommu_drvdata,
 	 */
 	flush_va_end = (void *) (((unsigned long) flush_va) +
 			(map.plist.list_size * sizeof(*pa_list)));
-	dmac_clean_range(flush_va, flush_va_end);
+	__dma_flush_area(flush_va, (map.plist.list_size * sizeof(*pa_list)));
 
 	ret = msm_iommu_sec_map2(&map);
 	kfree(pa_list);
@@ -566,24 +564,12 @@ static int msm_iommu_attach_dev(struct iommu_domain *domain, struct device *dev)
 
 	/* We can only do this once */
 	if (!iommu_drvdata->ctx_attach_count) {
-		ret = iommu_access_ops->iommu_clk_on(iommu_drvdata);
-		if (ret) {
-			iommu_access_ops->iommu_power_off(iommu_drvdata);
-			goto fail;
-		}
-
 		ret = msm_iommu_sec_program_iommu(iommu_drvdata,
 						ctx_drvdata);
 
 		/* bfb settings are always programmed by HLOS */
 		program_iommu_bfb_settings(iommu_drvdata->base,
 					   iommu_drvdata->bfb_settings);
-
-		iommu_access_ops->iommu_clk_off(iommu_drvdata);
-		if (ret) {
-			iommu_access_ops->iommu_power_off(iommu_drvdata);
-			goto fail;
-		}
 	}
 
 	list_add(&(ctx_drvdata->attached_elm), &priv->list_attached);
@@ -660,10 +646,8 @@ static int msm_iommu_map(struct iommu_domain *domain, unsigned long va,
 	if (ret)
 		goto fail;
 
-	iommu_access_ops->iommu_clk_on(iommu_drvdata);
 	ret = msm_iommu_sec_ptbl_map(iommu_drvdata, ctx_drvdata,
 					va, pa, len);
-	iommu_access_ops->iommu_clk_off(iommu_drvdata);
 fail:
 	iommu_access_ops->iommu_lock_release(0);
 	return ret;
@@ -682,10 +666,8 @@ static size_t msm_iommu_unmap(struct iommu_domain *domain, unsigned long va,
 	if (ret)
 		goto fail;
 
-	iommu_access_ops->iommu_clk_on(iommu_drvdata);
 	ret = msm_iommu_sec_ptbl_unmap(iommu_drvdata, ctx_drvdata,
 					va, len);
-	iommu_access_ops->iommu_clk_off(iommu_drvdata);
 fail:
 	iommu_access_ops->iommu_lock_release(0);
 
@@ -707,10 +689,8 @@ static int msm_iommu_map_range(struct iommu_domain *domain, unsigned int va,
 	ret = get_drvdata(domain, &iommu_drvdata, &ctx_drvdata);
 	if (ret)
 		goto fail;
-	iommu_access_ops->iommu_clk_on(iommu_drvdata);
 	ret = msm_iommu_sec_ptbl_map_range(iommu_drvdata, ctx_drvdata,
 						va, sg, len);
-	iommu_access_ops->iommu_clk_off(iommu_drvdata);
 fail:
 	iommu_access_ops->iommu_lock_release(0);
 	return ret;
@@ -733,9 +713,7 @@ static int msm_iommu_unmap_range(struct iommu_domain *domain, unsigned int va,
 	if (ret)
 		goto fail;
 
-	iommu_access_ops->iommu_clk_on(iommu_drvdata);
 	ret = msm_iommu_sec_ptbl_unmap(iommu_drvdata, ctx_drvdata, va, len);
-	iommu_access_ops->iommu_clk_off(iommu_drvdata);
 
 fail:
 	iommu_access_ops->iommu_lock_release(0);

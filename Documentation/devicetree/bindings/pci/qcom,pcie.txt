@@ -30,12 +30,12 @@
 - #address-cells:
 	Usage: required
 	Value type: <u32>
-	Definition: Should be set to 3. As specified in designware-pcie.txt
+	Definition: Should be 3. As specified in designware-pcie.txt
 
 - #size-cells:
 	Usage: required
 	Value type: <u32>
-	Definition: Should be set 2. As specified in designware-pcie.txt
+	Definition: Should be 2. As specified in designware-pcie.txt
 
 - ranges:
 	Usage: required

@@ -12,11 +12,11 @@
  *
  */
 
-#include <linux/platform_device.h>
-#include <linux/nvmem-consumer.h>
 #include <linux/err.h>
 #include <linux/io.h>
+#include <linux/nvmem-consumer.h>
 #include <linux/of_address.h>
+#include <linux/platform_device.h>
 #include <linux/regmap.h>
 #include "tsens.h"
 
@@ -26,6 +26,7 @@
 #define CAL_DEGC_PT1		30
 #define CAL_DEGC_PT2		120
 #define SLOPE_FACTOR		1000
+#define SLOPE_DEFAULT		3200
 
 char *qfprom_read(struct device *dev, const char *cname)
 {
@@ -39,9 +40,16 @@ char *qfprom_read(struct device *dev, const char *cname)
 
 	ret = nvmem_cell_read(cell, &data);
 	nvmem_cell_put(cell);
+
 	return ret;
 }
 
+/*
+ * Use this function on devices where slope and offset calculations
+ * depend on calibration data read from qfprom. On others the slope
+ * and offset values are derived from tz->tzp->slope and tz->tzp->offset
+ * resp.
+ */
 void compute_intercept_slope(struct tsens_device *tmdev, u32 *p1,
 			     u32 *p2, u32 mode)
 {
@@ -53,6 +61,7 @@ void compute_intercept_slope(struct tsens_device *tmdev, u32 *p1,
 			"sensor%d - data_point1:%#x data_point2:%#x\n",
 			i, p1[i], p2[i]);
 
+		tmdev->sensor[i].slope = SLOPE_DEFAULT;
 		if (mode == TWO_PT_CALIB) {
 			/*
 			 * slope (m) = adc_code2 - adc_code1 (y2 - y1)/
@@ -114,17 +123,19 @@ static const struct regmap_config tsens_config = {
 	.reg_stride	= 4,
 };
 
-int init_common(struct tsens_device *tmdev)
+int __init init_common(struct tsens_device *tmdev)
 {
 	void __iomem *base;
 
 	base = of_iomap(tmdev->dev->of_node, 0);
-	if (IS_ERR(base))
+	if (!base)
 		return -EINVAL;
 
 	tmdev->map = devm_regmap_init_mmio(tmdev->dev, base, &tsens_config);
-	if (!tmdev->map)
-		return -ENODEV;
+	if (IS_ERR(tmdev->map)) {
+		iounmap(base);
+		return PTR_ERR(tmdev->map);
+	}
 
 	return 0;
 }

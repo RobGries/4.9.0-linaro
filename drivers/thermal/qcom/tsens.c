@@ -29,18 +29,18 @@ static int tsens_get_temp(void *data, int *temp)
 	return tmdev->ops->get_temp(tmdev, s->id, temp);
 }
 
-static int tsens_get_trend(void *data, long *temp)
+static int tsens_get_trend(void *p, int trip, enum thermal_trend *trend)
 {
-	const struct tsens_sensor *s = data;
+	const struct tsens_sensor *s = p;
 	struct tsens_device *tmdev = s->tmdev;
 
 	if (tmdev->ops->get_trend)
-		return tmdev->ops->get_trend(tmdev, s->id, temp);
+		return  tmdev->ops->get_trend(tmdev, s->id, trend);
 
-	return -ENOSYS;
+	return -ENOTSUPP;
 }
 
-static int tsens_suspend(struct device *dev)
+static int  __maybe_unused tsens_suspend(struct device *dev)
 {
 	struct tsens_device *tmdev = dev_get_drvdata(dev);
 
@@ -50,7 +50,7 @@ static int tsens_suspend(struct device *dev)
 	return 0;
 }
 
-static int tsens_resume(struct device *dev)
+static int __maybe_unused tsens_resume(struct device *dev)
 {
 	struct tsens_device *tmdev = dev_get_drvdata(dev);
 
@@ -65,10 +65,13 @@ static SIMPLE_DEV_PM_OPS(tsens_pm_ops, tsens_suspend, tsens_resume);
 static const struct of_device_id tsens_table[] = {
 	{
 		.compatible = "qcom,msm8916-tsens",
-		.data = &ops_8916,
+		.data = &data_8916,
 	}, {
 		.compatible = "qcom,msm8974-tsens",
-		.data = &ops_8974,
+		.data = &data_8974,
+	}, {
+		.compatible = "qcom,msm8996-tsens",
+		.data = &data_8996,
 	},
 	{}
 };
@@ -81,26 +84,20 @@ static const struct thermal_zone_of_device_ops tsens_of_ops = {
 
 static int tsens_register(struct tsens_device *tmdev)
 {
-	int i, ret;
+	int i;
 	struct thermal_zone_device *tzd;
 	u32 *hw_id, n = tmdev->num_sensors;
-	struct device_node *np = tmdev->dev->of_node;
 
 	hw_id = devm_kcalloc(tmdev->dev, n, sizeof(u32), GFP_KERNEL);
 	if (!hw_id)
 		return -ENOMEM;
 
-	ret = of_property_read_u32_array(np, "qcom,sensor-id", hw_id, n);
 	for (i = 0;  i < tmdev->num_sensors; i++) {
-		if (ret)
-			tmdev->sensor[i].hw_id = i;
-		else
-			tmdev->sensor[i].hw_id = hw_id[i];
 		tmdev->sensor[i].tmdev = tmdev;
 		tmdev->sensor[i].id = i;
-		tzd = thermal_zone_of_sensor_register(tmdev->dev, i,
-						      &tmdev->sensor[i],
-						      &tsens_of_ops);
+		tzd = devm_thermal_zone_of_sensor_register(tmdev->dev, i,
+							   &tmdev->sensor[i],
+							   &tsens_of_ops);
 		if (IS_ERR(tzd))
 			continue;
 		tmdev->sensor[i].tzd = tzd;
@@ -112,11 +109,12 @@ static int tsens_register(struct tsens_device *tmdev)
 
 static int tsens_probe(struct platform_device *pdev)
 {
-	int ret, i, num;
+	int ret, i;
 	struct device *dev;
 	struct device_node *np;
 	struct tsens_sensor *s;
 	struct tsens_device *tmdev;
+	const struct tsens_data *data;
 	const struct of_device_id *id;
 
 	if (pdev->dev.of_node)
@@ -126,32 +124,33 @@ static int tsens_probe(struct platform_device *pdev)
 
 	np = dev->of_node;
 
-	num = of_property_count_u32_elems(np, "qcom,tsens-slopes");
-	if (num <= 0) {
-		dev_err(dev, "invalid tsens slopes\n");
+	id = of_match_node(tsens_table, np);
+	if (id)
+		data = id->data;
+	else
+		data = &data_8960;
+
+	if (data->num_sensors <= 0) {
+		dev_err(dev, "invalid number of sensors\n");
 		return -EINVAL;
 	}
 
 	tmdev = devm_kzalloc(dev, sizeof(*tmdev) +
-			     num * sizeof(*s), GFP_KERNEL);
+			     data->num_sensors * sizeof(*s), GFP_KERNEL);
 	if (!tmdev)
 		return -ENOMEM;
 
 	tmdev->dev = dev;
-	tmdev->num_sensors = num;
+	tmdev->num_sensors = data->num_sensors;
+	tmdev->ops = data->ops;
+	for (i = 0;  i < tmdev->num_sensors; i++) {
+		if (data->hw_ids)
+			tmdev->sensor[i].hw_id = data->hw_ids[i];
+		else
+			tmdev->sensor[i].hw_id = i;
+	}
 
-	for (i = 0, s = tmdev->sensor; i < tmdev->num_sensors; i++, s++)
-		of_property_read_u32_index(np, "qcom,tsens-slopes", i,
-					   &s->slope);
-
-	id = of_match_node(tsens_table, np);
-	if (id)
-		tmdev->ops = id->data;
-	else
-		tmdev->ops = &ops_8960;
-
-	if (!tmdev->ops || !tmdev->ops->init || !tmdev->ops->calibrate ||
-	    !tmdev->ops->get_temp)
+	if (!tmdev->ops || !tmdev->ops->init || !tmdev->ops->get_temp)
 		return -EINVAL;
 
 	ret = tmdev->ops->init(tmdev);
@@ -160,10 +159,12 @@ static int tsens_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	ret = tmdev->ops->calibrate(tmdev);
-	if (ret < 0) {
-		dev_err(dev, "tsens calibration failed\n");
-		return ret;
+	if (tmdev->ops->calibrate) {
+		ret = tmdev->ops->calibrate(tmdev);
+		if (ret < 0) {
+			dev_err(dev, "tsens calibration failed\n");
+			return ret;
+		}
 	}
 
 	ret = tsens_register(tmdev);
@@ -175,17 +176,10 @@ static int tsens_probe(struct platform_device *pdev)
 
 static int tsens_remove(struct platform_device *pdev)
 {
-	int i;
 	struct tsens_device *tmdev = platform_get_drvdata(pdev);
-	struct thermal_zone_device *tzd;
 
 	if (tmdev->ops->disable)
 		tmdev->ops->disable(tmdev);
-
-	for (i = 0; i < tmdev->num_sensors; i++) {
-		tzd = tmdev->sensor[i].tzd;
-		thermal_zone_of_sensor_unregister(&pdev->dev, tzd);
-	}
 
 	return 0;
 }

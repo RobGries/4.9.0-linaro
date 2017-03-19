@@ -12,6 +12,7 @@
  * GNU General Public License for more details.
  */
 
+#include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/err.h>
 #include <linux/export.h>
@@ -148,8 +149,8 @@ struct clk_smd_rpm_req {
 
 struct rpm_cc {
 	struct qcom_rpm *rpm;
-	struct clk_onecell_data data;
-	struct clk *clks[];
+	struct clk_smd_rpm **clks;
+	size_t num_clks;
 };
 
 struct rpm_smd_clk_desc {
@@ -463,22 +464,34 @@ static const struct rpm_smd_clk_desc rpm_clk_msm8916 = {
 };
 
 static const struct of_device_id rpm_smd_clk_match_table[] = {
-	{ .compatible = "qcom,rpmcc-msm8916", .data = &rpm_clk_msm8916},
+	{ .compatible = "qcom,rpmcc-msm8916", .data = &rpm_clk_msm8916 },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, rpm_smd_clk_match_table);
 
+static struct clk_hw *qcom_smdrpm_clk_hw_get(struct of_phandle_args *clkspec,
+					     void *data)
+{
+	struct rpm_cc *rcc = data;
+	unsigned int idx = clkspec->args[0];
+
+	if (idx >= rcc->num_clks) {
+		pr_err("%s: invalid index %u\n", __func__, idx);
+		return ERR_PTR(-EINVAL);
+	}
+
+	return rcc->clks[idx] ? &rcc->clks[idx]->hw : ERR_PTR(-ENOENT);
+}
+
 static int rpm_smd_clk_probe(struct platform_device *pdev)
 {
-	struct clk **clks;
-	struct clk *clk;
 	struct rpm_cc *rcc;
-	struct clk_onecell_data *data;
 	int ret;
 	size_t num_clks, i;
 	struct qcom_smd_rpm *rpm;
 	struct clk_smd_rpm **rpm_smd_clks;
 	const struct rpm_smd_clk_desc *desc;
+	struct clk *clk;
 
 	rpm = dev_get_drvdata(pdev->dev.parent);
 	if (!rpm) {
@@ -493,21 +506,16 @@ static int rpm_smd_clk_probe(struct platform_device *pdev)
 	rpm_smd_clks = desc->clks;
 	num_clks = desc->num_clks;
 
-	rcc = devm_kzalloc(&pdev->dev, sizeof(*rcc) + sizeof(*clks) * num_clks,
-			   GFP_KERNEL);
+	rcc = devm_kzalloc(&pdev->dev, sizeof(*rcc), GFP_KERNEL);
 	if (!rcc)
 		return -ENOMEM;
 
-	clks = rcc->clks;
-	data = &rcc->data;
-	data->clks = clks;
-	data->clk_num = num_clks;
+	rcc->clks = rpm_smd_clks;
+	rcc->num_clks = num_clks;
 
 	for (i = 0; i < num_clks; i++) {
-		if (!rpm_smd_clks[i]) {
-			clks[i] = ERR_PTR(-ENOENT);
+		if (!rpm_smd_clks[i])
 			continue;
-		}
 
 		rpm_smd_clks[i]->rpm = rpm;
 
@@ -521,10 +529,8 @@ static int rpm_smd_clk_probe(struct platform_device *pdev)
 		goto err;
 
 	for (i = 0; i < num_clks; i++) {
-		if (!rpm_smd_clks[i]) {
-			clks[i] = ERR_PTR(-ENOENT);
+		if (!rpm_smd_clks[i])
 			continue;
-		}
 
 		clk = devm_clk_register(&pdev->dev, &rpm_smd_clks[i]->hw);
 		if (IS_ERR(clk)) {
@@ -532,11 +538,12 @@ static int rpm_smd_clk_probe(struct platform_device *pdev)
 			goto err;
 		}
 
-		clks[i] = clk;
+		clk_set_rate(clk, INT_MAX);
+		clk_prepare_enable(clk);
 	}
 
-	ret = of_clk_add_provider(pdev->dev.of_node, of_clk_src_onecell_get,
-				  data);
+	ret = of_clk_add_hw_provider(pdev->dev.of_node, qcom_smdrpm_clk_hw_get,
+				     rcc);
 	if (ret)
 		goto err;
 

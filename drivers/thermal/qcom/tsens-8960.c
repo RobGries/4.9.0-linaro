@@ -16,6 +16,7 @@
 #include <linux/delay.h>
 #include <linux/bitops.h>
 #include <linux/regmap.h>
+#include <linux/thermal.h>
 #include "tsens.h"
 
 #define CAL_MDEGC		30000
@@ -62,6 +63,7 @@
 #define S0_STATUS_ADDR		0x3628
 #define INT_STATUS_ADDR		0x363c
 #define TRDY_MASK		BIT(7)
+#define TIMEOUT_US		100
 
 static int suspend_8960(struct tsens_device *tmdev)
 {
@@ -86,15 +88,12 @@ static int suspend_8960(struct tsens_device *tmdev)
 	if (ret)
 		return ret;
 
-	tmdev->trdy = false;
-
 	return 0;
 }
 
 static int resume_8960(struct tsens_device *tmdev)
 {
 	int ret;
-	unsigned long reg_cntl;
 	struct regmap *map = tmdev->map;
 
 	ret = regmap_update_bits(map, CNTL_ADDR, SW_RST, SW_RST);
@@ -119,9 +118,6 @@ static int resume_8960(struct tsens_device *tmdev)
 	if (ret)
 		return ret;
 
-	reg_cntl = tmdev->ctx.control;
-	reg_cntl >>= SENSOR0_SHIFT;
-
 	return 0;
 }
 
@@ -144,7 +140,6 @@ static int enable_8960(struct tsens_device *tmdev, int id)
 	else
 		reg |= mask | SLP_CLK_ENA_8660 | EN;
 
-	tmdev->trdy = false;
 	ret = regmap_write(tmdev->map, CNTL_ADDR, reg);
 	if (ret)
 		return ret;
@@ -241,7 +236,7 @@ static int calibrate_8960(struct tsens_device *tmdev)
 		return PTR_ERR(data);
 
 	for (i = 0; i < num_read; i++, s++)
-		s->offset = CAL_MDEGC - s->slope * data[i];
+		s->offset = data[i];
 
 	return 0;
 }
@@ -249,7 +244,12 @@ static int calibrate_8960(struct tsens_device *tmdev)
 /* Temperature on y axis and ADC-code on x-axis */
 static inline int code_to_mdegC(u32 adc_code, const struct tsens_sensor *s)
 {
-	return adc_code * s->slope + s->offset;
+	int slope, offset;
+
+	slope = thermal_zone_get_slope(s->tzd);
+	offset = CAL_MDEGC - slope * s->offset;
+
+	return adc_code * slope + offset;
 }
 
 static int get_temp_8960(struct tsens_device *tmdev, int id, int *temp)
@@ -257,30 +257,26 @@ static int get_temp_8960(struct tsens_device *tmdev, int id, int *temp)
 	int ret;
 	u32 code, trdy;
 	const struct tsens_sensor *s = &tmdev->sensor[id];
+	unsigned long timeout;
 
-	if (!tmdev->trdy) {
+	timeout = jiffies + usecs_to_jiffies(TIMEOUT_US);
+	do {
 		ret = regmap_read(tmdev->map, INT_STATUS_ADDR, &trdy);
 		if (ret)
 			return ret;
-		while (!(trdy & TRDY_MASK)) {
-			usleep_range(1000, 1100);
-			regmap_read(tmdev->map, INT_STATUS_ADDR, &trdy);
-		}
-		tmdev->trdy = true;
-	}
+		if (!(trdy & TRDY_MASK))
+			continue;
+		ret = regmap_read(tmdev->map, s->status, &code);
+		if (ret)
+			return ret;
+		*temp = code_to_mdegC(code, s);
+		return 0;
+	} while (time_before(jiffies, timeout));
 
-	ret = regmap_read(tmdev->map, s->status, &code);
-	if (ret)
-		return ret;
-
-	*temp = code_to_mdegC(code, s);
-
-	dev_dbg(tmdev->dev, "Sensor%d temp is: %d", id, *temp);
-
-	return 0;
+	return -ETIMEDOUT;
 }
 
-const struct tsens_ops ops_8960 = {
+static const struct tsens_ops ops_8960 = {
 	.init		= init_8960,
 	.calibrate	= calibrate_8960,
 	.get_temp	= get_temp_8960,
@@ -288,4 +284,9 @@ const struct tsens_ops ops_8960 = {
 	.disable	= disable_8960,
 	.suspend	= suspend_8960,
 	.resume		= resume_8960,
+};
+
+const struct tsens_data data_8960 = {
+	.num_sensors	= 11,
+	.ops		= &ops_8960,
 };

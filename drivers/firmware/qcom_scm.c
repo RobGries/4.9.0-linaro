@@ -1,4 +1,7 @@
-/* Copyright (c) 2010,2015, The Linux Foundation. All rights reserved.
+/*
+ * Qualcomm SCM driver
+ *
+ * Copyright (c) 2010,2015, The Linux Foundation. All rights reserved.
  * Copyright (C) 2015 Linaro Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -12,24 +15,28 @@
  *
  */
 #include <linux/platform_device.h>
-#include <linux/module.h>
+#include <linux/init.h>
 #include <linux/cpumask.h>
 #include <linux/export.h>
 #include <linux/dma-mapping.h>
 #include <linux/types.h>
 #include <linux/qcom_scm.h>
 #include <linux/of.h>
+#include <linux/of_platform.h>
 #include <linux/clk.h>
 #include <linux/reset-controller.h>
 
 #include "qcom_scm.h"
+
+#define SCM_HAS_CORE_CLK	BIT(0)
+#define SCM_HAS_IFACE_CLK	BIT(1)
+#define SCM_HAS_BUS_CLK		BIT(2)
 
 struct qcom_scm {
 	struct device *dev;
 	struct clk *core_clk;
 	struct clk *iface_clk;
 	struct clk *bus_clk;
-
 	struct reset_controller_dev reset;
 };
 
@@ -42,9 +49,11 @@ static int qcom_scm_clk_enable(void)
 	ret = clk_prepare_enable(__scm->core_clk);
 	if (ret)
 		goto bail;
+
 	ret = clk_prepare_enable(__scm->iface_clk);
 	if (ret)
 		goto disable_core;
+
 	ret = clk_prepare_enable(__scm->bus_clk);
 	if (ret)
 		goto disable_iface;
@@ -90,7 +99,7 @@ EXPORT_SYMBOL(qcom_scm_set_cold_boot_addr);
  */
 int qcom_scm_set_warm_boot_addr(void *entry, const cpumask_t *cpus)
 {
-	return __qcom_scm_set_warm_boot_addr(entry, cpus);
+	return __qcom_scm_set_warm_boot_addr(__scm->dev, entry, cpus);
 }
 EXPORT_SYMBOL(qcom_scm_set_warm_boot_addr);
 
@@ -118,15 +127,14 @@ bool qcom_scm_hdcp_available(void)
 	int ret = qcom_scm_clk_enable();
 
 	if (ret)
-		goto clk_err;
+		return ret;
 
-	ret = __qcom_scm_is_call_available(QCOM_SCM_SVC_HDCP,
+	ret = __qcom_scm_is_call_available(__scm->dev, QCOM_SCM_SVC_HDCP,
 						QCOM_SCM_CMD_HDCP);
 
 	qcom_scm_clk_disable();
 
-clk_err:
-	return (ret > 0) ? true : false;
+	return ret > 0 ? true : false;
 }
 EXPORT_SYMBOL(qcom_scm_hdcp_available);
 
@@ -145,7 +153,7 @@ int qcom_scm_hdcp_req(struct qcom_scm_hdcp_req *req, u32 req_cnt, u32 *resp)
 	if (ret)
 		return ret;
 
-	ret = __qcom_scm_hdcp_req(req, req_cnt, resp);
+	ret = __qcom_scm_hdcp_req(__scm->dev, req, req_cnt, resp);
 	qcom_scm_clk_disable();
 	return ret;
 }
@@ -162,12 +170,12 @@ bool qcom_scm_pas_supported(u32 peripheral)
 {
 	int ret;
 
-	ret = __qcom_scm_is_call_available(QCOM_SCM_SVC_PIL,
+	ret = __qcom_scm_is_call_available(__scm->dev, QCOM_SCM_SVC_PIL,
 					   QCOM_SCM_PAS_IS_SUPPORTED_CMD);
 	if (ret <= 0)
 		return false;
 
-	return __qcom_scm_pas_supported(peripheral);
+	return __qcom_scm_pas_supported(__scm->dev, peripheral);
 }
 EXPORT_SYMBOL(qcom_scm_pas_supported);
 
@@ -194,7 +202,8 @@ int qcom_scm_pas_init_image(u32 peripheral, const void *metadata, size_t size)
 	 * data blob, so make sure it's physically contiguous, 4K aligned and
 	 * non-cachable to avoid XPU violations.
 	 */
-	mdata_buf = dma_alloc_coherent(__scm->dev, size, &mdata_phys, GFP_KERNEL);
+	mdata_buf = dma_alloc_coherent(__scm->dev, size, &mdata_phys,
+				       GFP_KERNEL);
 	if (!mdata_buf) {
 		dev_err(__scm->dev, "Allocation of metadata buffer failed.\n");
 		return -ENOMEM;
@@ -205,7 +214,7 @@ int qcom_scm_pas_init_image(u32 peripheral, const void *metadata, size_t size)
 	if (ret)
 		goto free_metadata;
 
-	ret = __qcom_scm_pas_init_image(peripheral, mdata_phys);
+	ret = __qcom_scm_pas_init_image(__scm->dev, peripheral, mdata_phys);
 
 	qcom_scm_clk_disable();
 
@@ -233,7 +242,7 @@ int qcom_scm_pas_mem_setup(u32 peripheral, phys_addr_t addr, phys_addr_t size)
 	if (ret)
 		return ret;
 
-	ret = __qcom_scm_pas_mem_setup(peripheral, addr, size);
+	ret = __qcom_scm_pas_mem_setup(__scm->dev, peripheral, addr, size);
 	qcom_scm_clk_disable();
 
 	return ret;
@@ -255,7 +264,7 @@ int qcom_scm_pas_auth_and_reset(u32 peripheral)
 	if (ret)
 		return ret;
 
-	ret = __qcom_scm_pas_auth_and_reset(peripheral);
+	ret = __qcom_scm_pas_auth_and_reset(__scm->dev, peripheral);
 	qcom_scm_clk_disable();
 
 	return ret;
@@ -276,108 +285,36 @@ int qcom_scm_pas_shutdown(u32 peripheral)
 	if (ret)
 		return ret;
 
-	ret = __qcom_scm_pas_shutdown(peripheral);
+	ret = __qcom_scm_pas_shutdown(__scm->dev, peripheral);
 	qcom_scm_clk_disable();
 
 	return ret;
 }
 EXPORT_SYMBOL(qcom_scm_pas_shutdown);
 
-int qcom_scm_pil_init_image_cmd(u32 proc, u64 image_addr)
+static int qcom_scm_pas_reset_assert(struct reset_controller_dev *rcdev,
+				     unsigned long idx)
 {
-	return __qcom_scm_pil_init_image_cmd(proc, image_addr);
-}
-EXPORT_SYMBOL(qcom_scm_pil_init_image_cmd);
+	if (idx != 0)
+		return -EINVAL;
 
-int qcom_scm_pil_mem_setup_cmd(u32 proc, u64 start_addr, u32 len)
-{
-	return __qcom_scm_pil_mem_setup_cmd(proc, start_addr, len);
+	return __qcom_scm_pas_mss_reset(__scm->dev, 1);
 }
-EXPORT_SYMBOL(qcom_scm_pil_mem_setup_cmd);
 
-int qcom_scm_pil_auth_and_reset_cmd(u32 proc)
+static int qcom_scm_pas_reset_deassert(struct reset_controller_dev *rcdev,
+				       unsigned long idx)
 {
-	return __qcom_scm_pil_auth_and_reset_cmd(proc);
-}
-EXPORT_SYMBOL(qcom_scm_pil_auth_and_reset_cmd);
+	if (idx != 0)
+		return -EINVAL;
 
-int qcom_scm_pil_shutdown_cmd(u32 proc)
-{
-	return __qcom_scm_pil_shutdown_cmd(proc);
+	return __qcom_scm_pas_mss_reset(__scm->dev, 0);
 }
-EXPORT_SYMBOL(qcom_scm_pil_shutdown_cmd);
 
-int qcom_scm_iommu_dump_fault_regs(u32 id, u32 context, u64 addr, u32 len)
-{
-	return __qcom_scm_iommu_dump_fault_regs(id, context, addr, len);
-}
-EXPORT_SYMBOL(qcom_scm_iommu_dump_fault_regs);
+static const struct reset_control_ops qcom_scm_pas_reset_ops = {
+	.assert = qcom_scm_pas_reset_assert,
+	.deassert = qcom_scm_pas_reset_deassert,
+};
 
-int qcom_scm_iommu_set_cp_pool_size(u32 size, u32 spare)
-{
-	return __qcom_scm_iommu_set_cp_pool_size(size, spare);
-}
-EXPORT_SYMBOL(qcom_scm_iommu_set_cp_pool_size);
-
-int qcom_scm_iommu_secure_ptbl_size(u32 spare, int psize[2])
-{
-	return __qcom_scm_iommu_secure_ptbl_size(spare, psize);
-}
-EXPORT_SYMBOL(qcom_scm_iommu_secure_ptbl_size);
-
-int qcom_scm_iommu_secure_ptbl_init(u64 addr, u32 size, u32 spare)
-{
-	return __qcom_scm_iommu_secure_ptbl_init(addr, size, spare);
-}
-EXPORT_SYMBOL(qcom_scm_iommu_secure_ptbl_init);
-
-int qcom_scm_iommu_secure_map(u64 list, u32 list_size, u32 size,
-			      u32 id, u32 ctx_id, u64 va, u32 info_size,
-			      u32 flags)
-{
-	return __qcom_scm_iommu_secure_map(list, list_size, size, id,
-					   ctx_id, va, info_size, flags);
-}
-EXPORT_SYMBOL(qcom_scm_iommu_secure_map);
-
-int qcom_scm_iommu_secure_unmap(u32 id, u32 ctx_id, u64 va, u32 size, u32 flags)
-{
-	return __qcom_scm_iommu_secure_unmap(id, ctx_id, va, size, flags);
-}
-EXPORT_SYMBOL(qcom_scm_iommu_secure_unmap);
-
-int qcom_scm_is_call_available(u32 svc_id, u32 cmd_id)
-{
-	return __qcom_scm_is_call_available(svc_id, cmd_id);
-}
-EXPORT_SYMBOL(qcom_scm_is_call_available);
-
-int qcom_scm_get_feat_version(u32 feat)
-{
-	return __qcom_scm_get_feat_version(feat);
-}
-EXPORT_SYMBOL(qcom_scm_get_feat_version);
-
-int qcom_scm_restore_sec_cfg(u32 device_id, u32 spare)
-{
-	return __qcom_scm_restore_sec_cfg(device_id, spare);
-}
-EXPORT_SYMBOL(qcom_scm_restore_sec_cfg);
-
-int qcom_scm_set_video_state(u32 state, u32 spare)
-{
-	return __qcom_scm_set_video_state(state, spare);
-}
-EXPORT_SYMBOL(qcom_scm_set_video_state);
-
-int qcom_scm_mem_protect_video_var(u32 start, u32 size,
-				   u32 nonpixel_start,
-				   u32 nonpixel_size)
-{
-	return __qcom_scm_mem_protect_video_var(start, size, nonpixel_start,
-						nonpixel_size);
-}
-EXPORT_SYMBOL(qcom_scm_mem_protect_video_var);
 /**
  * qcom_scm_is_available() - Checks if SCM is available
  */
@@ -387,91 +324,149 @@ bool qcom_scm_is_available(void)
 }
 EXPORT_SYMBOL(qcom_scm_is_available);
 
-static int __init qcom_scm_init(void)
+int qcom_scm_video_set_state(u32 state, u32 spare)
 {
-	return __qcom_scm_init();
-}
+	int ret;
 
-static int qcom_scm_reset_assert(struct reset_controller_dev *rcdev, unsigned long idx)
+	ret = qcom_scm_clk_enable();
+	if (ret)
+		return ret;
+
+	ret = __qcom_scm_video_set_state(__scm->dev, state, spare);
+
+	qcom_scm_clk_disable();
+
+	return ret;
+}
+EXPORT_SYMBOL(qcom_scm_video_set_state);
+
+int qcom_scm_iommu_secure_ptbl_size(u32 spare, size_t *size)
 {
-	return __qcom_scm_pas_mss_reset(1);
+	return __qcom_scm_iommu_secure_ptbl_size(__scm->dev, spare, size);
 }
+EXPORT_SYMBOL(qcom_scm_iommu_secure_ptbl_size);
 
-static int qcom_scm_reset_deassert(struct reset_controller_dev *rcdev, unsigned long idx)
+int qcom_scm_iommu_secure_ptbl_init(u64 addr, u32 size, u32 spare)
 {
-	return __qcom_scm_pas_mss_reset(0);
+	return __qcom_scm_iommu_secure_ptbl_init(__scm->dev, addr, size, spare);
 }
+EXPORT_SYMBOL(qcom_scm_iommu_secure_ptbl_init);
 
-static struct reset_control_ops scm_reset_ops = {
-	.assert = qcom_scm_reset_assert,
-	.deassert = qcom_scm_reset_deassert,
-};
+int qcom_scm_iommu_dump_fault_regs(u32 id, u32 context, u64 addr, u32 len)
+{
+	return __qcom_scm_iommu_dump_fault_regs(__scm->dev, id, context, addr,
+						len);
+}
+EXPORT_SYMBOL(qcom_scm_iommu_dump_fault_regs);
+
+int qcom_scm_restore_sec_cfg(u32 device_id, u32 spare)
+{
+	return __qcom_scm_restore_sec_cfg(__scm->dev, device_id, spare);
+}
+EXPORT_SYMBOL(qcom_scm_restore_sec_cfg);
+
+int qcom_scm_iommu_secure_map(u64 list, u32 list_size, u32 size, u32 id,
+			      u32 ctx_id, u64 va, u32 info_size, u32 flags)
+{
+	return  __qcom_scm_iommu_secure_map(__scm->dev, list, list_size, size,
+					    id, ctx_id, va, info_size, flags);
+}
+EXPORT_SYMBOL(qcom_scm_iommu_secure_map);
+
+int qcom_scm_iommu_secure_unmap(u32 id, u32 ctx_id, u64 va, u32 size, u32 flags)
+{
+	return __qcom_scm_iommu_secure_unmap(__scm->dev, id, ctx_id, va, size,
+					     flags);
+}
+EXPORT_SYMBOL(qcom_scm_iommu_secure_unmap);
+
+int qcom_scm_is_call_available(u32 svc_id, u32 cmd_id)
+{
+	return __qcom_scm_is_call_available(__scm->dev, svc_id, cmd_id);
+}
+EXPORT_SYMBOL(qcom_scm_is_call_available);
 
 static int qcom_scm_probe(struct platform_device *pdev)
 {
 	struct qcom_scm *scm;
-	long rate;
+	unsigned long clks;
 	int ret;
-
-	ret = qcom_scm_init();
-	if (IS_ERR_VALUE(ret))
-		return ret;
 
 	scm = devm_kzalloc(&pdev->dev, sizeof(*scm), GFP_KERNEL);
 	if (!scm)
 		return -ENOMEM;
 
-	scm->dev = &pdev->dev;
-
-	scm->core_clk = devm_clk_get(&pdev->dev, "core");
-	if (IS_ERR(scm->core_clk)) {
-		if (PTR_ERR(scm->core_clk) == -EPROBE_DEFER)
-			return -EPROBE_DEFER;
-
-		dev_err(&pdev->dev, "failed to acquire core clk\n");
-		scm->core_clk = NULL;
+	clks = (unsigned long)of_device_get_match_data(&pdev->dev);
+	if (clks & SCM_HAS_CORE_CLK) {
+		scm->core_clk = devm_clk_get(&pdev->dev, "core");
+		if (IS_ERR(scm->core_clk)) {
+			if (PTR_ERR(scm->core_clk) != -EPROBE_DEFER)
+				dev_err(&pdev->dev,
+					"failed to acquire core clk\n");
+			return PTR_ERR(scm->core_clk);
+		}
 	}
 
-	scm->iface_clk = devm_clk_get(&pdev->dev, "iface");
-	if (IS_ERR(scm->iface_clk)) {
-		if (PTR_ERR(scm->iface_clk) == -EPROBE_DEFER)
-			return -EPROBE_DEFER;
-
-		dev_err(&pdev->dev, "failed to acquire iface clk\n");
-		scm->iface_clk = NULL;
+	if (clks & SCM_HAS_IFACE_CLK) {
+		scm->iface_clk = devm_clk_get(&pdev->dev, "iface");
+		if (IS_ERR(scm->iface_clk)) {
+			if (PTR_ERR(scm->iface_clk) != -EPROBE_DEFER)
+				dev_err(&pdev->dev,
+					"failed to acquire iface clk\n");
+			return PTR_ERR(scm->iface_clk);
+		}
 	}
 
-	scm->bus_clk = devm_clk_get(&pdev->dev, "bus");
-	if (IS_ERR(scm->bus_clk)) {
-		if (PTR_ERR(scm->bus_clk) == -EPROBE_DEFER)
-			return -EPROBE_DEFER;
-
-		dev_err(&pdev->dev, "failed to acquire bus clk\n");
-		scm->bus_clk = NULL;
+	if (clks & SCM_HAS_BUS_CLK) {
+		scm->bus_clk = devm_clk_get(&pdev->dev, "bus");
+		if (IS_ERR(scm->bus_clk)) {
+			if (PTR_ERR(scm->bus_clk) != -EPROBE_DEFER)
+				dev_err(&pdev->dev,
+					"failed to acquire bus clk\n");
+			return PTR_ERR(scm->bus_clk);
+		}
 	}
 
-	scm->reset.ops = &scm_reset_ops;
+	scm->reset.ops = &qcom_scm_pas_reset_ops;
 	scm->reset.nr_resets = 1;
 	scm->reset.of_node = pdev->dev.of_node;
-	reset_controller_register(&scm->reset);
+	ret = devm_reset_controller_register(&pdev->dev, &scm->reset);
+	if (ret)
+		return ret;
 
 	/* vote for max clk rate for highest performance */
-	rate = clk_round_rate(scm->core_clk, INT_MAX);
-	ret = clk_set_rate(scm->core_clk, rate);
+	ret = clk_set_rate(scm->core_clk, INT_MAX);
 	if (ret)
 		return ret;
 
 	__scm = scm;
+	__scm->dev = &pdev->dev;
+
+	__qcom_scm_init();
 
 	return 0;
 }
 
 static const struct of_device_id qcom_scm_dt_match[] = {
-	{ .compatible = "qcom,scm",},
-	{},
+	{ .compatible = "qcom,scm-apq8064",
+	  .data = (void *) SCM_HAS_CORE_CLK,
+	},
+	{ .compatible = "qcom,scm-msm8660",
+	  .data = (void *) SCM_HAS_CORE_CLK,
+	},
+	{ .compatible = "qcom,scm-msm8960",
+	  .data = (void *) SCM_HAS_CORE_CLK,
+	},
+	{ .compatible = "qcom,scm-msm8996",
+	  .data = NULL, /* no clocks */
+	},
+	{ .compatible = "qcom,scm",
+	  .data = (void *)(SCM_HAS_CORE_CLK
+			   | SCM_HAS_IFACE_CLK
+			   | SCM_HAS_BUS_CLK),
+	},
+	{}
 };
-
-MODULE_DEVICE_TABLE(of, qcom_scm_dt_match);
 
 static struct platform_driver qcom_scm_driver = {
 	.driver = {
@@ -481,4 +476,32 @@ static struct platform_driver qcom_scm_driver = {
 	.probe = qcom_scm_probe,
 };
 
-builtin_platform_driver(qcom_scm_driver);
+static int __init qcom_scm_init(void)
+{
+	struct device_node *np, *fw_np;
+	int ret;
+
+	fw_np = of_find_node_by_name(NULL, "firmware");
+
+	if (!fw_np)
+		return -ENODEV;
+
+	np = of_find_matching_node(fw_np, qcom_scm_dt_match);
+
+	if (!np) {
+		of_node_put(fw_np);
+		return -ENODEV;
+	}
+
+	of_node_put(np);
+
+	ret = of_platform_populate(fw_np, qcom_scm_dt_match, NULL, NULL);
+
+	of_node_put(fw_np);
+
+	if (ret)
+		return ret;
+
+	return platform_driver_register(&qcom_scm_driver);
+}
+subsys_initcall(qcom_scm_init);

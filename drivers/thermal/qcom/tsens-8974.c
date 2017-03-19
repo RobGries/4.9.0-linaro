@@ -232,8 +232,13 @@ static int calibrate_8974(struct tsens_device *tmdev)
 	return 0;
 }
 
-const struct tsens_ops ops_8974 = {
+static const struct tsens_ops ops_8974 = {
 	.init		= init_common,
 	.calibrate	= calibrate_8974,
 	.get_temp	= get_temp_common,
+};
+
+const struct tsens_data data_8974 = {
+	.num_sensors	= 11,
+	.ops		= &ops_8974,
 };

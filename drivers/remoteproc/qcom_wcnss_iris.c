@@ -1,5 +1,5 @@
 /*
- * Qualcomm Peripheral Image Loader
+ * Qualcomm Wireless Connectivity Subsystem Iris driver
  *
  * Copyright (C) 2016 Linaro Ltd
  * Copyright (C) 2014 Sony Mobile Communications AB
@@ -20,7 +20,6 @@
 #include <linux/module.h>
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
-#include <linux/qcom_scm.h>
 #include <linux/regulator/consumer.h>
 
 #include "qcom_wcnss.h"
@@ -172,8 +171,9 @@ static const struct of_device_id iris_of_match[] = {
 	{ .compatible = "qcom,wcn3680", .data = &wcn3680_data },
 	{}
 };
+MODULE_DEVICE_TABLE(of, iris_of_match);
 
-static struct platform_driver wcnss_driver = {
+struct platform_driver qcom_iris_driver = {
 	.probe = qcom_iris_probe,
 	.remove = qcom_iris_remove,
 	.driver = {
@@ -181,5 +181,3 @@ static struct platform_driver wcnss_driver = {
 		.of_match_table = iris_of_match,
 	},
 };
-
-module_platform_driver(wcnss_driver);

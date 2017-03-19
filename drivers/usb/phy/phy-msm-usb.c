@@ -1,4 +1,4 @@
-/* Copyright (c) 2009-2011, 2017 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2009-2011, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -18,6 +18,7 @@
 
 #include <linux/module.h>
 #include <linux/device.h>
+#include <linux/extcon.h>
 #include <linux/gpio/consumer.h>
 #include <linux/platform_device.h>
 #include <linux/clk.h>
@@ -35,6 +36,8 @@
 #include <linux/of_device.h>
 #include <linux/reboot.h>
 #include <linux/reset.h>
+#include <linux/types.h>
+#include <linux/usb/otg.h>
 
 #include <linux/usb.h>
 #include <linux/usb/otg.h>
@@ -42,10 +45,182 @@
 #include <linux/usb/ulpi.h>
 #include <linux/usb/gadget.h>
 #include <linux/usb/hcd.h>
-#include <linux/usb/msm_hsusb.h>
 #include <linux/usb/msm_hsusb_hw.h>
 #include <linux/regulator/consumer.h>
-#include <linux/msm-bus.h>
+
+/**
+ * OTG control
+ *
+ * OTG_NO_CONTROL	Id/VBUS notifications not required. Useful in host
+ *                      only configuration.
+ * OTG_PHY_CONTROL	Id/VBUS notifications comes form USB PHY.
+ * OTG_PMIC_CONTROL	Id/VBUS notifications comes from PMIC hardware.
+ * OTG_USER_CONTROL	Id/VBUS notifcations comes from User via sysfs.
+ *
+ */
+enum otg_control_type {
+	OTG_NO_CONTROL = 0,
+	OTG_PHY_CONTROL,
+	OTG_PMIC_CONTROL,
+	OTG_USER_CONTROL,
+};
+
+/**
+ * PHY used in
+ *
+ * INVALID_PHY			Unsupported PHY
+ * CI_45NM_INTEGRATED_PHY	Chipidea 45nm integrated PHY
+ * SNPS_28NM_INTEGRATED_PHY	Synopsis 28nm integrated PHY
+ *
+ */
+enum msm_usb_phy_type {
+	INVALID_PHY = 0,
+	CI_45NM_INTEGRATED_PHY,
+	SNPS_28NM_INTEGRATED_PHY,
+};
+
+#define IDEV_CHG_MAX	1500
+#define IUNIT		100
+
+/**
+ * Different states involved in USB charger detection.
+ *
+ * USB_CHG_STATE_UNDEFINED	USB charger is not connected or detection
+ *                              process is not yet started.
+ * USB_CHG_STATE_WAIT_FOR_DCD	Waiting for Data pins contact.
+ * USB_CHG_STATE_DCD_DONE	Data pin contact is detected.
+ * USB_CHG_STATE_PRIMARY_DONE	Primary detection is completed (Detects
+ *                              between SDP and DCP/CDP).
+ * USB_CHG_STATE_SECONDARY_DONE	Secondary detection is completed (Detects
+ *                              between DCP and CDP).
+ * USB_CHG_STATE_DETECTED	USB charger type is determined.
+ *
+ */
+enum usb_chg_state {
+	USB_CHG_STATE_UNDEFINED = 0,
+	USB_CHG_STATE_WAIT_FOR_DCD,
+	USB_CHG_STATE_DCD_DONE,
+	USB_CHG_STATE_PRIMARY_DONE,
+	USB_CHG_STATE_SECONDARY_DONE,
+	USB_CHG_STATE_DETECTED,
+};
+
+/**
+ * USB charger types
+ *
+ * USB_INVALID_CHARGER	Invalid USB charger.
+ * USB_SDP_CHARGER	Standard downstream port. Refers to a downstream port
+ *                      on USB2.0 compliant host/hub.
+ * USB_DCP_CHARGER	Dedicated charger port (AC charger/ Wall charger).
+ * USB_CDP_CHARGER	Charging downstream port. Enumeration can happen and
+ *                      IDEV_CHG_MAX can be drawn irrespective of USB state.
+ *
+ */
+enum usb_chg_type {
+	USB_INVALID_CHARGER = 0,
+	USB_SDP_CHARGER,
+	USB_DCP_CHARGER,
+	USB_CDP_CHARGER,
+};
+
+/**
+ * struct msm_otg_platform_data - platform device data
+ *              for msm_otg driver.
+ * @phy_init_seq: PHY configuration sequence values. Value of -1 is reserved as
+ *              "do not overwrite default vaule at this address".
+ * @phy_init_sz: PHY configuration sequence size.
+ * @vbus_power: VBUS power on/off routine.
+ * @power_budget: VBUS power budget in mA (0 will be treated as 500mA).
+ * @mode: Supported mode (OTG/peripheral/host).
+ * @otg_control: OTG switch controlled by user/Id pin
+ */
+struct msm_otg_platform_data {
+	int *phy_init_seq;
+	int phy_init_sz;
+	void (*vbus_power)(bool on);
+	unsigned power_budget;
+	enum usb_dr_mode mode;
+	enum otg_control_type otg_control;
+	enum msm_usb_phy_type phy_type;
+	void (*setup_gpio)(enum usb_otg_state state);
+};
+
+/**
+ * struct msm_usb_cable - structure for exteternal connector cable
+ *			  state tracking
+ * @nb: hold event notification callback
+ * @conn: used for notification registration
+ */
+struct msm_usb_cable {
+	struct notifier_block		nb;
+	struct extcon_dev		*extcon;
+};
+
+/**
+ * struct msm_otg: OTG driver data. Shared by HCD and DCD.
+ * @otg: USB OTG Transceiver structure.
+ * @pdata: otg device platform data.
+ * @irq: IRQ number assigned for HSUSB controller.
+ * @clk: clock struct of usb_hs_clk.
+ * @pclk: clock struct of usb_hs_pclk.
+ * @core_clk: clock struct of usb_hs_core_clk.
+ * @regs: ioremapped register base address.
+ * @inputs: OTG state machine inputs(Id, SessValid etc).
+ * @sm_work: OTG state machine work.
+ * @in_lpm: indicates low power mode (LPM) state.
+ * @async_int: Async interrupt arrived.
+ * @cur_power: The amount of mA available from downstream port.
+ * @chg_work: Charger detection work.
+ * @chg_state: The state of charger detection process.
+ * @chg_type: The type of charger attached.
+ * @dcd_retires: The retry count used to track Data contact
+ *               detection process.
+ * @manual_pullup: true if VBUS is not routed to USB controller/phy
+ *	and controller driver therefore enables pull-up explicitly before
+ *	starting controller using usbcmd run/stop bit.
+ * @vbus: VBUS signal state trakining, using extcon framework
+ * @id: ID signal state trakining, using extcon framework
+ * @switch_gpio: Descriptor for GPIO used to control external Dual
+ *               SPDT USB Switch.
+ * @reboot: Used to inform the driver to route USB D+/D- line to Device
+ *	    connector
+ */
+struct msm_otg {
+	struct usb_phy phy;
+	struct msm_otg_platform_data *pdata;
+	int irq;
+	struct clk *clk;
+	struct clk *pclk;
+	struct clk *core_clk;
+	void __iomem *regs;
+#define ID		0
+#define B_SESS_VLD	1
+	unsigned long inputs;
+	struct work_struct sm_work;
+	atomic_t in_lpm;
+	int async_int;
+	unsigned cur_power;
+	int phy_number;
+	struct delayed_work chg_work;
+	enum usb_chg_state chg_state;
+	enum usb_chg_type chg_type;
+	u8 dcd_retries;
+	struct regulator *v3p3;
+	struct regulator *v1p8;
+	struct regulator *vddcx;
+
+	struct reset_control *phy_rst;
+	struct reset_control *link_rst;
+	int vdd_levels[3];
+
+	bool manual_pullup;
+
+	struct msm_usb_cable vbus;
+	struct msm_usb_cable id;
+
+	struct gpio_desc *switch_gpio;
+	struct notifier_block reboot;
+};
 
 #define MSM_USB_BASE	(motg->regs)
 #define DRIVER_NAME	"msm_otg"
@@ -76,9 +251,6 @@ enum vdd_levels {
 static int msm_hsusb_init_vddcx(struct msm_otg *motg, int init)
 {
 	int ret = 0;
-
-	if (IS_ERR(motg->vddcx))
-		return 0;
 
 	if (init) {
 		ret = regulator_set_voltage(motg->vddcx,
@@ -761,15 +933,8 @@ static int msm_otg_set_host(struct usb_otg *otg, struct usb_bus *host)
 	otg->host = host;
 	dev_dbg(otg->usb_phy->dev, "host driver registered w/ tranceiver\n");
 
-	/*
-	 * Kick the state machine work, if peripheral is not supported
-	 * or peripheral is already registered with us.
-	 */
-	if (motg->pdata->mode == USB_DR_MODE_HOST ||
-			motg->pdata->mode == USB_DR_MODE_OTG || otg->gadget) {
-		pm_runtime_get_sync(otg->usb_phy->dev);
-		schedule_work(&motg->sm_work);
-	}
+	pm_runtime_get_sync(otg->usb_phy->dev);
+	schedule_work(&motg->sm_work);
 
 	return 0;
 }
@@ -832,15 +997,8 @@ static int msm_otg_set_peripheral(struct usb_otg *otg,
 	dev_dbg(otg->usb_phy->dev,
 		"peripheral driver registered w/ tranceiver\n");
 
-	/*
-	 * Kick the state machine work, if host is not supported
-	 * or host is already registered with us.
-	 */
-	if (motg->pdata->mode == USB_DR_MODE_PERIPHERAL ||
-		motg->pdata->mode == USB_DR_MODE_OTG || otg->host) {
-		pm_runtime_get_sync(otg->usb_phy->dev);
-		schedule_work(&motg->sm_work);
-	}
+	pm_runtime_get_sync(otg->usb_phy->dev);
+	schedule_work(&motg->sm_work);
 
 	return 0;
 }
@@ -1653,22 +1811,9 @@ static int msm_otg_reboot_notify(struct notifier_block *this,
 	return NOTIFY_DONE;
 }
 
-static void msm_otg_bus_vote(struct msm_otg *motg, enum usb_bus_vote vote)
-{
-	int ret;
-
-	if (motg->bus_perf_client) {
-		ret = msm_bus_scale_client_update_request(
-				motg->bus_perf_client, vote);
-		if (ret)
-			dev_err(motg->phy.dev, "%s: Failed to vote (%d)\n"
-					"for bus bw %d\n", __func__, vote, ret);
-	}
-}
-
 static int msm_otg_probe(struct platform_device *pdev)
 {
-	struct regulator_bulk_data regs[2];
+	struct regulator_bulk_data regs[3];
 	int ret = 0;
 	struct device_node *np = pdev->dev.of_node;
 	struct msm_otg_platform_data *pdata;
@@ -1688,8 +1833,6 @@ static int msm_otg_probe(struct platform_device *pdev)
 
 	phy = &motg->phy;
 	phy->dev = &pdev->dev;
-	INIT_WORK(&motg->sm_work, msm_otg_sm_work);
-	INIT_DELAYED_WORK(&motg->chg_work, msm_chg_detect_work);
 
 	motg->clk = devm_clk_get(&pdev->dev, np ? "core" : "usb_hs_clk");
 	if (IS_ERR(motg->clk)) {
@@ -1748,7 +1891,7 @@ static int msm_otg_probe(struct platform_device *pdev)
 		writel(0x1, phy_select);
 	}
 
-	dev_info(&pdev->dev, "OTG regs = %pK\n", motg->regs);
+	dev_info(&pdev->dev, "OTG regs = %p\n", motg->regs);
 
 	motg->irq = platform_get_irq(pdev, 0);
 	if (motg->irq < 0) {
@@ -1757,21 +1900,17 @@ static int msm_otg_probe(struct platform_device *pdev)
 		goto unregister_extcon;
 	}
 
-	regs[0].supply = "v3p3";
-	regs[1].supply = "v1p8";
+	regs[0].supply = "vddcx";
+	regs[1].supply = "v3p3";
+	regs[2].supply = "v1p8";
 
 	ret = devm_regulator_bulk_get(motg->phy.dev, ARRAY_SIZE(regs), regs);
-	if (ret) {
-		dev_err(&pdev->dev, "no v3p3 or v1p8\n");
+	if (ret)
 		goto unregister_extcon;
-	}
 
-	motg->v3p3  = regs[0].consumer;
-	motg->v1p8  = regs[1].consumer;
-
-	motg->vddcx = devm_regulator_get_optional(motg->phy.dev, "vddcx");
-	if (IS_ERR(motg->vddcx))
-		dev_info(&pdev->dev, "no vddcx\n");
+	motg->vddcx = regs[0].consumer;
+	motg->v3p3  = regs[1].consumer;
+	motg->v1p8  = regs[2].consumer;
 
 	clk_set_rate(motg->clk, 60000000);
 
@@ -1801,6 +1940,8 @@ static int msm_otg_probe(struct platform_device *pdev)
 	writel(0, USB_USBINTR);
 	writel(0, USB_OTGSC);
 
+	INIT_WORK(&motg->sm_work, msm_otg_sm_work);
+	INIT_DELAYED_WORK(&motg->chg_work, msm_chg_detect_work);
 	ret = devm_request_irq(&pdev->dev, motg->irq, msm_otg_irq, IRQF_SHARED,
 					"msm_otg", motg);
 	if (ret) {
@@ -1827,19 +1968,6 @@ static int msm_otg_probe(struct platform_device *pdev)
 		goto disable_ldo;
 	}
 
-	motg->pdata->bus_scale_table = msm_bus_cl_get_pdata(pdev);
-	if (!motg->pdata->bus_scale_table)
-		dev_dbg(&pdev->dev, "bus scaling is disabled\n");
-	else {
-		motg->bus_perf_client =
-			msm_bus_scale_register_client(motg->pdata->bus_scale_table);
-		if (!motg->bus_perf_client)
-			dev_err(motg->phy.dev, "%s: Failed to register BUS\n"
-					"scaling client!!\n", __func__);
-	}
-	/* Hack to max out usb performace */
-	msm_otg_bus_vote(motg, USB_MAX_PERF_VOTE);
-
 	platform_set_drvdata(pdev, motg);
 	device_init_wakeup(&pdev->dev, 1);
 
@@ -1862,6 +1990,7 @@ static int msm_otg_probe(struct platform_device *pdev)
 	register_reboot_notifier(&motg->reboot);
 
 	pm_runtime_set_active(&pdev->dev);
+	pm_runtime_enable(&pdev->dev);
 
 	return 0;
 
@@ -1914,7 +2043,6 @@ static int msm_otg_remove(struct platform_device *pdev)
 
 	usb_remove_phy(phy);
 	disable_irq(motg->irq);
-	msm_bus_scale_unregister_client(motg->bus_perf_client);
 
 	/*
 	 * Put PHY in low power mode.

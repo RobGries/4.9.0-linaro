@@ -39,13 +39,14 @@
 
 	};
 
-	smd {
-		q6@1 {
-			status = "ok";
-		};
+	hdmi-out {
+		compatible = "hdmi-connector";
+		type = "a";
 
-		riva@6 {
-			status = "ok";
+		port {
+			hdmi_con: endpoint {
+				remote-endpoint = <&hdmi_out>;
+			};
 		};
 	};
 
@@ -82,14 +83,6 @@
 					regulator-max-microvolt = <1225000>;
 					qcom,switch-mode-frequency = <3200000>;
 					bias-pull-down;
-				};
-
-				s2 {
-					regulator-min-microvolt = <1300000>;
-					regulator-max-microvolt = <1300000>;
-					qcom,switch-mode-frequency = <1600000>;
-					bias-pull-down;
-					regulator-always-on;
 				};
 
 				s3 {
@@ -145,18 +138,12 @@
 					bias-pull-down;
 				};
 
-				l26 {
-					regulator-min-microvolt = < 375000>;
-					regulator-max-microvolt = <1050000>;
-					bias-pull-down;
-				};
 				lvs6 {
 					bias-pull-down;
 				};
 
 				lvs7 {
 					bias-pull-down;
-					regulator-always-on;
 				};
 			};
 		};
@@ -314,13 +301,6 @@
 			target-supply	= <&pm8921_lvs7>;
 		};
 
-		wcnss@3204000 {
-			status = "ok";
-
-			pinctrl-names = "default";
-			pinctrl-0 = <&wcnss_pin_a>;
-		};
-
 		/* OTG */
 		phy@12500000 {
 			status		= "okay";
@@ -360,20 +340,6 @@
 		usb@12530000 {
 			status = "okay";
 		};
-		pil_q6v4: pil@28800000 {
-			qcom,pll-supply = <&pm8921_l26>;
-			qcom,pll-uV = <1050000>;
-		};
-
-		hdmi: qcom,hdmi-tx@4a00000 {
-			status = "okay";
-			core-vdda-supply = <&pm8921_hdmi_switch>;
-			hdmi-mux-supply = <&vcc3v3>;
-		};
-
-		mdp: qcom,mdp@5100000 {
-			status = "okay";
-		};
 
 		amba {
 			/* eMMC */
@@ -392,22 +358,38 @@
 				cd-gpios	= <&tlmm_pinmux 26 GPIO_ACTIVE_HIGH>;
 			};
 		};
+
+		hdmi-tx@4a00000 {
+			status = "okay";
+			core-vdda-supply = <&pm8921_hdmi_switch>;
+			hdmi-mux-supply = <&vcc3v3>;
+
+			hpd-gpio = <&tlmm_pinmux 72 GPIO_ACTIVE_HIGH>;
+
+			ports {
+				port@1 {
+					endpoint {
+						remote-endpoint = <&hdmi_con>;
+					};
+				};
+			};
+		};
+
+		hdmi-phy@4a00400 {
+			status = "okay";
+			core-vdda-supply = <&pm8921_hdmi_switch>;
+		};
+
+		mdp@5100000 {
+			status = "okay";
+
+			ports {
+				port@3 {
+					endpoint {
+						remote-endpoint = <&hdmi_in>;
+					};
+				};
+			};
+		};
 	};
-};
-
-
-&CPU0 {
-	cpu-supply = <&saw0>;
-};
-
-&CPU1 {
-	cpu-supply = <&saw1>;
-};
-
-&CPU2 {
-	cpu-supply = <&saw2>;
-};
-
-&CPU3 {
-	cpu-supply = <&saw3>;
 };

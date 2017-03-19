@@ -1,6 +1,10 @@
 /*
+ * Qualcomm PCIe root complex driver
+ *
  * Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  * Copyright 2015 Linaro Limited.
+ *
+ * Author: Stanimir Varbanov <svarbanov@mm-sol.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -19,7 +23,7 @@
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/kernel.h>
-#include <linux/module.h>
+#include <linux/init.h>
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
 #include <linux/pci.h>
@@ -41,17 +45,9 @@
 #define PCIE20_ELBI_SYS_CTRL			0x04
 #define PCIE20_ELBI_SYS_CTRL_LT_ENABLE		BIT(0)
 
-#define PCIE20_ELBI_SYS_STTS			0x08
-#define XMLH_LINK_UP				BIT(10)
-
 #define PCIE20_CAP				0x70
-#define PCIE20_CAP_LINKCTRLSTATUS		(PCIE20_CAP + 0x10)
-#define PCIE20_CAP_LINKCTRLSTATUS_LINK_UP	BIT(29)
 
 #define PERST_DELAY_US				1000
-
-#define LINKUP_DELAY_US				5000
-#define LINKUP_TIMEOUT_US			100000
 
 struct qcom_pcie_resources_v0 {
 	struct clk *iface_clk;
@@ -90,12 +86,10 @@ struct qcom_pcie_ops {
 };
 
 struct qcom_pcie {
-	struct pcie_port pp;
-	struct device *dev;
+	struct pcie_port pp;			/* pp.dbi_base is DT dbi */
+	void __iomem *parf;			/* DT parf */
+	void __iomem *elbi;			/* DT elbi */
 	union qcom_pcie_resources res;
-	void __iomem *parf;
-	void __iomem *dbi;
-	void __iomem *elbi;
 	struct phy *phy;
 	struct gpio_desc *reset;
 	struct qcom_pcie_ops *ops;
@@ -122,34 +116,25 @@ static irqreturn_t qcom_pcie_msi_irq_handler(int irq, void *arg)
 	return dw_handle_msi_irq(pp);
 }
 
-static int qcom_pcie_enable_link_training(struct qcom_pcie *pcie)
+static int qcom_pcie_establish_link(struct qcom_pcie *pcie)
 {
-	struct device *dev = pcie->dev;
 	u32 val;
-	int ret;
+
+	if (dw_pcie_link_up(&pcie->pp))
+		return 0;
 
 	/* enable link training */
 	val = readl(pcie->elbi + PCIE20_ELBI_SYS_CTRL);
 	val |= PCIE20_ELBI_SYS_CTRL_LT_ENABLE;
 	writel(val, pcie->elbi + PCIE20_ELBI_SYS_CTRL);
 
-	/* wait for up to 100ms for the link to come up */
-	ret = readl_poll_timeout(pcie->elbi + PCIE20_ELBI_SYS_STTS, val,
-				 val & XMLH_LINK_UP, LINKUP_DELAY_US,
-				 LINKUP_TIMEOUT_US);
-
-	if (ret < 0 || !dw_pcie_link_up(&pcie->pp)) {
-		dev_err(dev, "link initialization failed\n");
-		return -ETIMEDOUT;
-	}
-
-	return 0;
+	return dw_pcie_wait_for_link(&pcie->pp);
 }
 
 static int qcom_pcie_get_resources_v0(struct qcom_pcie *pcie)
 {
 	struct qcom_pcie_resources_v0 *res = &pcie->res.v0;
-	struct device *dev = pcie->dev;
+	struct device *dev = pcie->pp.dev;
 
 	res->vdda = devm_regulator_get(dev, "vdda");
 	if (IS_ERR(res->vdda))
@@ -201,7 +186,7 @@ static int qcom_pcie_get_resources_v0(struct qcom_pcie *pcie)
 static int qcom_pcie_get_resources_v1(struct qcom_pcie *pcie)
 {
 	struct qcom_pcie_resources_v1 *res = &pcie->res.v1;
-	struct device *dev = pcie->dev;
+	struct device *dev = pcie->pp.dev;
 
 	res->vdda = devm_regulator_get(dev, "vdda");
 	if (IS_ERR(res->vdda))
@@ -250,7 +235,7 @@ static void qcom_pcie_deinit_v0(struct qcom_pcie *pcie)
 static int qcom_pcie_init_v0(struct qcom_pcie *pcie)
 {
 	struct qcom_pcie_resources_v0 *res = &pcie->res.v0;
-	struct device *dev = pcie->dev;
+	struct device *dev = pcie->pp.dev;
 	u32 val;
 	int ret;
 
@@ -372,7 +357,7 @@ static void qcom_pcie_deinit_v1(struct qcom_pcie *pcie)
 static int qcom_pcie_init_v1(struct qcom_pcie *pcie)
 {
 	struct qcom_pcie_resources_v1 *res = &pcie->res.v1;
-	struct device *dev = pcie->dev;
+	struct device *dev = pcie->pp.dev;
 	int ret;
 
 	ret = reset_control_deassert(res->core);
@@ -411,7 +396,6 @@ static int qcom_pcie_init_v1(struct qcom_pcie *pcie)
 		goto err_slave;
 	}
 
-
 	/* change DBI base address */
 	writel(0, pcie->parf + PCIE20_PARF_DBI_BASE_ADDR);
 
@@ -440,9 +424,9 @@ err_res:
 static int qcom_pcie_link_up(struct pcie_port *pp)
 {
 	struct qcom_pcie *pcie = to_qcom_pcie(pp);
-	u32 val = readl(pcie->dbi + PCIE20_CAP_LINKCTRLSTATUS);
+	u16 val = readw(pcie->pp.dbi_base + PCIE20_CAP + PCI_EXP_LNKSTA);
 
-	return !!(val & PCIE20_CAP_LINKCTRLSTATUS_LINK_UP);
+	return !!(val & PCI_EXP_LNKSTA_DLLLA);
 }
 
 static void qcom_pcie_host_init(struct pcie_port *pp)
@@ -467,7 +451,7 @@ static void qcom_pcie_host_init(struct pcie_port *pp)
 
 	qcom_ep_reset_deassert(pcie);
 
-	ret = qcom_pcie_enable_link_training(pcie);
+	ret = qcom_pcie_establish_link(pcie);
 	if (ret)
 		goto err;
 
@@ -479,8 +463,8 @@ err_deinit:
 	pcie->ops->deinit(pcie);
 }
 
-static int
-qcom_pcie_rd_own_conf(struct pcie_port *pp, int where, int size, u32 *val)
+static int qcom_pcie_rd_own_conf(struct pcie_port *pp, int where, int size,
+				 u32 *val)
 {
 	/* the device class is not reported correctly from the register */
 	if (where == PCI_CLASS_REVISION && size == 4) {
@@ -523,8 +507,8 @@ static int qcom_pcie_probe(struct platform_device *pdev)
 	if (!pcie)
 		return -ENOMEM;
 
+	pp = &pcie->pp;
 	pcie->ops = (struct qcom_pcie_ops *)of_device_get_match_data(dev);
-	pcie->dev = dev;
 
 	pcie->reset = devm_gpiod_get_optional(dev, "perst", GPIOD_OUT_LOW);
 	if (IS_ERR(pcie->reset))
@@ -536,9 +520,9 @@ static int qcom_pcie_probe(struct platform_device *pdev)
 		return PTR_ERR(pcie->parf);
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "dbi");
-	pcie->dbi = devm_ioremap_resource(dev, res);
-	if (IS_ERR(pcie->dbi))
-		return PTR_ERR(pcie->dbi);
+	pp->dbi_base = devm_ioremap_resource(dev, res);
+	if (IS_ERR(pp->dbi_base))
+		return PTR_ERR(pp->dbi_base);
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "elbi");
 	pcie->elbi = devm_ioremap_resource(dev, res);
@@ -549,13 +533,11 @@ static int qcom_pcie_probe(struct platform_device *pdev)
 	if (IS_ERR(pcie->phy))
 		return PTR_ERR(pcie->phy);
 
+	pp->dev = dev;
 	ret = pcie->ops->get_resources(pcie);
 	if (ret)
 		return ret;
 
-	pp = &pcie->pp;
-	pp->dev = dev;
-	pp->dbi_base = pcie->dbi;
 	pp->root_bus_nr = -1;
 	pp->ops = &qcom_pcie_dw_ops;
 
@@ -583,20 +565,6 @@ static int qcom_pcie_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	platform_set_drvdata(pdev, pcie);
-
-	return 0;
-}
-
-static int qcom_pcie_remove(struct platform_device *pdev)
-{
-	struct qcom_pcie *pcie = platform_get_drvdata(pdev);
-
-	qcom_ep_reset_assert(pcie);
-	phy_power_off(pcie->phy);
-	phy_exit(pcie->phy);
-	pcie->ops->deinit(pcie);
-
 	return 0;
 }
 
@@ -606,19 +574,13 @@ static const struct of_device_id qcom_pcie_match[] = {
 	{ .compatible = "qcom,pcie-apq8084", .data = &ops_v1 },
 	{ }
 };
-MODULE_DEVICE_TABLE(of, qcom_pcie_match);
 
 static struct platform_driver qcom_pcie_driver = {
 	.probe = qcom_pcie_probe,
-	.remove = qcom_pcie_remove,
 	.driver = {
 		.name = "qcom-pcie",
+		.suppress_bind_attrs = true,
 		.of_match_table = qcom_pcie_match,
 	},
 };
-
-module_platform_driver(qcom_pcie_driver);
-
-MODULE_AUTHOR("Stanimir Varbanov <svarbanov@mm-sol.com>");
-MODULE_DESCRIPTION("Qualcomm PCIe root complex driver");
-MODULE_LICENSE("GPL v2");
+builtin_platform_driver(qcom_pcie_driver);

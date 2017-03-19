@@ -18,7 +18,8 @@
 #include <linux/platform_device.h>
 #include <linux/export.h>
 #include <linux/iommu.h>
-#include <linux/qcom_iommu.h>
+
+#include "qcom_iommu.h"
 
 static DEFINE_MUTEX(iommu_list_lock);
 static LIST_HEAD(iommu_list);

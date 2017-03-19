@@ -72,7 +72,7 @@ struct rpmsg_endpoint *rpmsg_create_ept(struct rpmsg_device *rpdev,
 					struct rpmsg_channel_info chinfo)
 {
 	if (WARN_ON(!rpdev))
-		return ERR_PTR(-EINVAL);
+		return NULL;
 
 	return rpdev->ops->create_ept(rpdev, cb, priv, chinfo);
 }
@@ -424,7 +424,8 @@ static int rpmsg_dev_probe(struct device *dev)
 	err = rpdrv->probe(rpdev);
 	if (err) {
 		dev_err(dev, "%s: failed: %d\n", __func__, err);
-		rpmsg_destroy_ept(ept);
+		if (ept)
+			rpmsg_destroy_ept(ept);
 		goto out;
 	}
 
@@ -445,7 +446,8 @@ static int rpmsg_dev_remove(struct device *dev)
 
 	rpdrv->remove(rpdev);
 
-	rpmsg_destroy_ept(rpdev->ept);
+	if (rpdev->ept)
+		rpmsg_destroy_ept(rpdev->ept);
 
 	return err;
 }
@@ -471,8 +473,8 @@ int rpmsg_register_device(struct rpmsg_device *rpdev)
 	struct device *dev = &rpdev->dev;
 	int ret;
 
-	dev_set_name(&rpdev->dev, "%s:%s",
-		     dev_name(dev->parent), rpdev->id.name);
+	dev_set_name(&rpdev->dev, "%s.%s.%d.%d", dev_name(dev->parent),
+		     rpdev->id.name, rpdev->src, rpdev->dst);
 
 	rpdev->dev.bus = &rpmsg_bus;
 	rpdev->dev.release = rpmsg_release_device;

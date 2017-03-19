@@ -270,9 +270,6 @@ free_req:
 	return ret;
 }
 
-int wcnss_ctrl_done_loading_nv;
-EXPORT_SYMBOL(wcnss_ctrl_done_loading_nv);
-
 /**
  * qcom_wcnss_open_channel() - open additional SMD channel to WCNSS
  * @wcnss:	wcnss handle, retrieved from drvdata
@@ -312,8 +309,6 @@ static void wcnss_async_probe(struct work_struct *work)
 		if (!ret)
 			dev_err(wcnss->dev, "expected cold boot completion\n");
 	}
-
-	wcnss_ctrl_done_loading_nv = 1;
 
 	of_platform_populate(wcnss->dev->of_node, NULL, NULL, wcnss->dev);
 }

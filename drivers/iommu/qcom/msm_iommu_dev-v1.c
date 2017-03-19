@@ -19,18 +19,16 @@
 #include <linux/clk.h>
 #include <linux/iommu.h>
 #include <linux/interrupt.h>
-#include <linux/msm-bus.h>
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_device.h>
-#include <linux/of_iommu.h>
 
 #include "msm_iommu_hw-v1.h"
-#include <linux/qcom_iommu.h>
-#include "msm_iommu_perfmon.h"
+#include "qcom_iommu.h"
 #include <linux/qcom_scm.h>
+#include "msm_iommu_perfmon.h"
 #include "msm_iommu_priv.h"
 
 static const struct of_device_id msm_iommu_ctx_match_table[];
@@ -102,31 +100,11 @@ static int msm_iommu_parse_bfb_settings(struct platform_device *pdev,
 static int __get_bus_vote_client(struct platform_device *pdev,
 				 struct msm_iommu_drvdata *drvdata)
 {
-	int ret = 0;
-	struct msm_bus_scale_pdata *bs_table;
-	const char *dummy;
-
-	/* Check whether bus scaling has been specified for this node */
-	ret = of_property_read_string(pdev->dev.of_node, "qcom,msm-bus,name",
-				      &dummy);
-	if (ret)
-		return 0;
-
-	bs_table = msm_bus_cl_get_pdata(pdev);
-	if (bs_table) {
-		drvdata->bus_client = msm_bus_scale_register_client(bs_table);
-		if (IS_ERR(&drvdata->bus_client)) {
-			pr_err("%s(): Bus client register failed.\n", __func__);
-			ret = -EINVAL;
-		}
-	}
-
-	return ret;
+	return 0;
 }
 
 static void __put_bus_vote_client(struct msm_iommu_drvdata *drvdata)
 {
-	msm_bus_scale_unregister_client(drvdata->bus_client);
 	drvdata->bus_client = 0;
 }
 
@@ -265,7 +243,7 @@ static int msm_iommu_pmon_parse_dt(struct platform_device *pdev,
 
 	return 0;
 }
-
+#if 0
 #define SCM_SVC_MP		0xc
 #define MAXIMUM_VIRT_SIZE	(300 * SZ_1M)
 #define MAKE_VERSION(major, minor, patch) \
@@ -334,6 +312,7 @@ free_mem:
 	dma_free_attrs(dev, psize[0], cpu_addr, paddr, &attrs);
 	return ret;
 }
+#endif
 
 static int msm_iommu_probe(struct platform_device *pdev)
 {
@@ -407,12 +386,13 @@ static int msm_iommu_probe(struct platform_device *pdev)
 	dev_info(dev, "device %s (model: %d) mapped at %p, with %d ctx banks\n",
 		 drvdata->name, drvdata->model, drvdata->base, drvdata->ncb);
 
+#if 0
 	if (drvdata->sec_id != -1) {
 		ret = msm_iommu_sec_ptbl_init(dev);
 		if (ret)
 			return ret;
 	}
-
+#endif
 	platform_set_drvdata(pdev, drvdata);
 
 	pmon_info = msm_iommu_pm_alloc(dev);
@@ -481,6 +461,12 @@ static int msm_iommu_probe(struct platform_device *pdev)
 		return ret;
 	}
 
+	ret = __enable_clocks(drvdata);
+	if (ret) {
+		dev_err(dev, "Failed to enable clocks\n");
+		return ret;
+	}
+
 	return msm_iommu_init(&pdev->dev);
 }
 
@@ -493,6 +479,7 @@ static int msm_iommu_remove(struct platform_device *pdev)
 
 	drv = platform_get_drvdata(pdev);
 	if (drv) {
+		__disable_clocks(drv);
 		__put_bus_vote_client(drv);
 		msm_iommu_remove_drv(drv);
 		platform_set_drvdata(pdev, NULL);
@@ -685,7 +672,7 @@ static struct platform_driver msm_iommu_ctx_driver = {
 	.remove = msm_iommu_ctx_remove,
 };
 
-static int __init msm_iommu_driver_init(struct device_node *np)
+static int __init msm_iommu_driver_init(void)
 {
 	int ret;
 
@@ -704,13 +691,13 @@ static int __init msm_iommu_driver_init(struct device_node *np)
 
 	return 0;
 }
-IOMMU_OF_DECLARE(msm_mmuv1, "qcom,msm-mmu-500", msm_iommu_driver_init);
 
 static void __exit msm_iommu_driver_exit(void)
 {
 	platform_driver_unregister(&msm_iommu_ctx_driver);
 	platform_driver_unregister(&msm_iommu_driver);
 }
+subsys_initcall(msm_iommu_driver_init);
 module_exit(msm_iommu_driver_exit);
 
 MODULE_LICENSE("GPL v2");

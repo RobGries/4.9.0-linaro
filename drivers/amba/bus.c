@@ -19,84 +19,16 @@
 #include <linux/amba/bus.h>
 #include <linux/sizes.h>
 #include <linux/limits.h>
+#include <linux/clk/clk-conf.h>
 
 #include <asm/irq.h>
 
 #define to_amba_driver(d)	container_of(d, struct amba_driver, drv)
 
-static int amba_get_enable_pclk(struct amba_device *pcdev)
-{
-	int ret;
-
-	pcdev->pclk = clk_get(&pcdev->dev, "apb_pclk");
-	if (IS_ERR(pcdev->pclk))
-		return PTR_ERR(pcdev->pclk);
-
-	ret = clk_prepare_enable(pcdev->pclk);
-	if (ret)
-		clk_put(pcdev->pclk);
-
-	return ret;
-}
-
-static void amba_put_disable_pclk(struct amba_device *pcdev)
-{
-	clk_disable_unprepare(pcdev->pclk);
-	clk_put(pcdev->pclk);
-}
-
-static int amba_read_periphid(struct amba_device *adev)
-{
-	resource_size_t size;
-	void __iomem *tmp;
-	int r, i;
-
-	if (adev->periphid)
-		return 0;
-
-	/*
-	 * Dynamically calculate the size of the resource
-	 * and use this for iomap
-	 */
-	size = resource_size(&adev->res);
-	tmp = ioremap(adev->res.start, size);
-	if (!tmp)
-		return -ENODEV;
-
-	r = amba_get_enable_pclk(adev);
-	if (r == 0) {
-		u32 pid, cid;
-
-		/*
-		 * Read pid and cid based on size of resource
-		 * they are located at end of region
-		 */
-		for (pid = 0, i = 0; i < 4; i++)
-			pid |= (readl(tmp + size - 0x20 + 4 * i) & 255) <<
-				(i * 8);
-		for (cid = 0, i = 0; i < 4; i++)
-			cid |= (readl(tmp + size - 0x10 + 4 * i) & 255) <<
-				(i * 8);
-
-		amba_put_disable_pclk(adev);
-
-		if (cid == AMBA_CID || cid == CORESIGHT_CID)
-			adev->periphid = pid;
-
-	}
-
-	iounmap(tmp);
-
-	return adev->periphid ? 0 : -ENODEV;
-}
-
 static const struct amba_id *
 amba_lookup(const struct amba_id *table, struct amba_device *dev)
 {
 	int ret = 0;
-
-	if (amba_read_periphid(dev))
-		return NULL;
 
 	while (table->mask) {
 		ret = (dev->periphid & table->mask) == table->id;
@@ -273,6 +205,27 @@ static int __init amba_init(void)
 
 postcore_initcall(amba_init);
 
+static int amba_get_enable_pclk(struct amba_device *pcdev)
+{
+	int ret;
+
+	pcdev->pclk = clk_get(&pcdev->dev, "apb_pclk");
+	if (IS_ERR(pcdev->pclk))
+		return PTR_ERR(pcdev->pclk);
+
+	ret = clk_prepare_enable(pcdev->pclk);
+	if (ret)
+		clk_put(pcdev->pclk);
+
+	return ret;
+}
+
+static void amba_put_disable_pclk(struct amba_device *pcdev)
+{
+	clk_disable_unprepare(pcdev->pclk);
+	clk_put(pcdev->pclk);
+}
+
 /*
  * These are the device model conversion veneers; they convert the
  * device model structures to our more specific structures.
@@ -285,6 +238,10 @@ static int amba_probe(struct device *dev)
 	int ret;
 
 	do {
+		ret = of_clk_set_defaults(dev->of_node, false);
+		if (ret < 0)
+			break;
+
 		ret = dev_pm_domain_attach(dev, true);
 		if (ret == -EPROBE_DEFER)
 			break;
@@ -384,18 +341,11 @@ static void amba_device_release(struct device *dev)
 	kfree(d);
 }
 
-/**
- *	amba_device_add - add a previously allocated AMBA device structure
- *	@dev: AMBA device allocated by amba_device_alloc
- *	@parent: resource parent for this devices resources
- *
- *	Claim the resource, and read the device cell ID if not already
- *	initialized.  Register the AMBA device with the Linux device
- *	manager.
- */
-int amba_device_add(struct amba_device *dev, struct resource *parent)
+static int amba_device_try_add(struct amba_device *dev, struct resource *parent)
 {
-	int ret;
+	u32 size;
+	void __iomem *tmp;
+	int i, ret;
 
 	WARN_ON(dev->irq[0] == (unsigned int)-1);
 	WARN_ON(dev->irq[1] == (unsigned int)-1);
@@ -404,6 +354,58 @@ int amba_device_add(struct amba_device *dev, struct resource *parent)
 	if (ret)
 		goto err_out;
 
+	/* Hard-coded primecell ID instead of plug-n-play */
+	if (dev->periphid != 0)
+		goto skip_probe;
+
+	/*
+	 * Dynamically calculate the size of the resource
+	 * and use this for iomap
+	 */
+	size = resource_size(&dev->res);
+	tmp = ioremap(dev->res.start, size);
+	if (!tmp) {
+		ret = -ENOMEM;
+		goto err_release;
+	}
+
+	ret = dev_pm_domain_attach(&dev->dev, true);
+	if (ret == -EPROBE_DEFER) {
+		iounmap(tmp);
+		goto err_release;
+	}
+
+	ret = amba_get_enable_pclk(dev);
+	if (ret == 0) {
+		u32 pid, cid;
+
+		/*
+		 * Read pid and cid based on size of resource
+		 * they are located at end of region
+		 */
+		for (pid = 0, i = 0; i < 4; i++)
+			pid |= (readl(tmp + size - 0x20 + 4 * i) & 255) <<
+				(i * 8);
+		for (cid = 0, i = 0; i < 4; i++)
+			cid |= (readl(tmp + size - 0x10 + 4 * i) & 255) <<
+				(i * 8);
+
+		amba_put_disable_pclk(dev);
+
+		if (cid == AMBA_CID || cid == CORESIGHT_CID)
+			dev->periphid = pid;
+
+		if (!dev->periphid)
+			ret = -ENODEV;
+	}
+
+	iounmap(tmp);
+	dev_pm_domain_detach(&dev->dev, true);
+
+	if (ret)
+		goto err_release;
+
+ skip_probe:
 	ret = device_add(&dev->dev);
 	if (ret)
 		goto err_release;
@@ -420,6 +422,88 @@ int amba_device_add(struct amba_device *dev, struct resource *parent)
  err_release:
 	release_resource(&dev->res);
  err_out:
+	return ret;
+}
+
+/*
+ * Registration of AMBA device require reading its pid and cid registers.
+ * To do this, the device must be turned on (if it is a part of power domain)
+ * and have clocks enabled. However in some cases those resources might not be
+ * yet available. Returning EPROBE_DEFER is not a solution in such case,
+ * because callers don't handle this special error code. Instead such devices
+ * are added to the special list and their registration is retried from
+ * periodic worker, until all resources are available and registration succeeds.
+ */
+struct deferred_device {
+	struct amba_device *dev;
+	struct resource *parent;
+	struct list_head node;
+};
+
+static LIST_HEAD(deferred_devices);
+static DEFINE_MUTEX(deferred_devices_lock);
+
+static void amba_deferred_retry_func(struct work_struct *dummy);
+static DECLARE_DELAYED_WORK(deferred_retry_work, amba_deferred_retry_func);
+
+#define DEFERRED_DEVICE_TIMEOUT (msecs_to_jiffies(5 * 1000))
+
+static void amba_deferred_retry_func(struct work_struct *dummy)
+{
+	struct deferred_device *ddev, *tmp;
+
+	mutex_lock(&deferred_devices_lock);
+
+	list_for_each_entry_safe(ddev, tmp, &deferred_devices, node) {
+		int ret = amba_device_try_add(ddev->dev, ddev->parent);
+
+		if (ret == -EPROBE_DEFER)
+			continue;
+
+		list_del_init(&ddev->node);
+		kfree(ddev);
+	}
+
+	if (!list_empty(&deferred_devices))
+		schedule_delayed_work(&deferred_retry_work,
+				      DEFERRED_DEVICE_TIMEOUT);
+
+	mutex_unlock(&deferred_devices_lock);
+}
+
+/**
+ *	amba_device_add - add a previously allocated AMBA device structure
+ *	@dev: AMBA device allocated by amba_device_alloc
+ *	@parent: resource parent for this devices resources
+ *
+ *	Claim the resource, and read the device cell ID if not already
+ *	initialized.  Register the AMBA device with the Linux device
+ *	manager.
+ */
+int amba_device_add(struct amba_device *dev, struct resource *parent)
+{
+	int ret = amba_device_try_add(dev, parent);
+
+	if (ret == -EPROBE_DEFER) {
+		struct deferred_device *ddev;
+
+		ddev = kmalloc(sizeof(*ddev), GFP_KERNEL);
+		if (!ddev)
+			return -ENOMEM;
+
+		ddev->dev = dev;
+		ddev->parent = parent;
+		ret = 0;
+
+		mutex_lock(&deferred_devices_lock);
+
+		if (list_empty(&deferred_devices))
+			schedule_delayed_work(&deferred_retry_work,
+					      DEFERRED_DEVICE_TIMEOUT);
+		list_add_tail(&ddev->node, &deferred_devices);
+
+		mutex_unlock(&deferred_devices_lock);
+	}
 	return ret;
 }
 EXPORT_SYMBOL_GPL(amba_device_add);

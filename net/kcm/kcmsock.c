@@ -1,3 +1,13 @@
+/*
+ * Kernel Connection Multiplexor
+ *
+ * Copyright (c) 2016 Tom Herbert <tom@herbertland.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2
+ * as published by the Free Software Foundation.
+ */
+
 #include <linux/bpf.h>
 #include <linux/errno.h>
 #include <linux/errqueue.h>
@@ -13,10 +23,10 @@
 #include <linux/socket.h>
 #include <linux/uaccess.h>
 #include <linux/workqueue.h>
+#include <linux/syscalls.h>
 #include <net/kcm.h>
 #include <net/netns/generic.h>
 #include <net/sock.h>
-#include <net/tcp.h>
 #include <uapi/linux/kcm.h>
 
 unsigned int kcm_net_id;
@@ -35,33 +45,10 @@ static inline struct kcm_tx_msg *kcm_tx_msg(struct sk_buff *skb)
 	return (struct kcm_tx_msg *)skb->cb;
 }
 
-static inline struct kcm_rx_msg *kcm_rx_msg(struct sk_buff *skb)
-{
-	return (struct kcm_rx_msg *)((void *)skb->cb +
-				     offsetof(struct qdisc_skb_cb, data));
-}
-
 static void report_csk_error(struct sock *csk, int err)
 {
 	csk->sk_err = EPIPE;
 	csk->sk_error_report(csk);
-}
-
-/* Callback lock held */
-static void kcm_abort_rx_psock(struct kcm_psock *psock, int err,
-			       struct sk_buff *skb)
-{
-	struct sock *csk = psock->sk;
-
-	/* Unrecoverable error in receive */
-
-	if (psock->rx_stopped)
-		return;
-
-	psock->rx_stopped = 1;
-
-	/* Report an error on the lower socket */
-	report_csk_error(csk, err);
 }
 
 static void kcm_abort_tx_psock(struct kcm_psock *psock, int err,
@@ -80,6 +67,7 @@ static void kcm_abort_tx_psock(struct kcm_psock *psock, int err,
 	}
 
 	psock->tx_stopped = 1;
+	KCM_STATS_INCR(psock->stats.tx_aborts);
 
 	if (!psock->tx_kcm) {
 		/* Take off psocks_avail list */
@@ -99,6 +87,30 @@ static void kcm_abort_tx_psock(struct kcm_psock *psock, int err,
 
 	/* Report error on lower socket */
 	report_csk_error(csk, err);
+}
+
+/* RX mux lock held. */
+static void kcm_update_rx_mux_stats(struct kcm_mux *mux,
+				    struct kcm_psock *psock)
+{
+	STRP_STATS_ADD(mux->stats.rx_bytes,
+		       psock->strp.stats.rx_bytes -
+		       psock->saved_rx_bytes);
+	mux->stats.rx_msgs +=
+		psock->strp.stats.rx_msgs - psock->saved_rx_msgs;
+	psock->saved_rx_msgs = psock->strp.stats.rx_msgs;
+	psock->saved_rx_bytes = psock->strp.stats.rx_bytes;
+}
+
+static void kcm_update_tx_mux_stats(struct kcm_mux *mux,
+				    struct kcm_psock *psock)
+{
+	KCM_STATS_ADD(mux->stats.tx_bytes,
+		      psock->stats.tx_bytes - psock->saved_tx_bytes);
+	mux->stats.tx_msgs +=
+		psock->stats.tx_msgs - psock->saved_tx_msgs;
+	psock->saved_tx_msgs = psock->stats.tx_msgs;
+	psock->saved_tx_bytes = psock->stats.tx_bytes;
 }
 
 static int kcm_queue_rcv_skb(struct sock *sk, struct sk_buff *skb);
@@ -140,11 +152,11 @@ static void kcm_rcv_ready(struct kcm_sock *kcm)
 		 */
 		list_del(&psock->psock_ready_list);
 		psock->ready_rx_msg = NULL;
-
 		/* Commit clearing of ready_rx_msg for queuing work */
 		smp_mb();
 
-		queue_work(kcm_wq, &psock->rx_work);
+		strp_unpause(&psock->strp);
+		strp_check_rcv(&psock->strp);
 	}
 
 	/* Buffer limit is okay now, add to ready list */
@@ -254,8 +266,11 @@ static struct kcm_sock *reserve_rx_kcm(struct kcm_psock *psock,
 		return psock->rx_kcm;
 	}
 
+	kcm_update_rx_mux_stats(mux, psock);
+
 	if (list_empty(&mux->kcm_rx_waiters)) {
 		psock->ready_rx_msg = head;
+		strp_pause(&psock->strp);
 		list_add_tail(&psock->psock_ready_list,
 			      &mux->psocks_ready);
 		spin_unlock_bh(&mux->rx_lock);
@@ -324,275 +339,60 @@ static void unreserve_rx_kcm(struct kcm_psock *psock,
 	spin_unlock_bh(&mux->rx_lock);
 }
 
-/* Macro to invoke filter function. */
-#define KCM_RUN_FILTER(prog, ctx) \
-	(*prog->bpf_func)(ctx, prog->insnsi)
-
-/* Lower socket lock held */
-static int kcm_tcp_recv(read_descriptor_t *desc, struct sk_buff *orig_skb,
-			unsigned int orig_offset, size_t orig_len)
-{
-	struct kcm_psock *psock = (struct kcm_psock *)desc->arg.data;
-	struct kcm_rx_msg *rxm;
-	struct kcm_sock *kcm;
-	struct sk_buff *head, *skb;
-	size_t eaten = 0, cand_len;
-	ssize_t extra;
-	int err;
-	bool cloned_orig = false;
-
-	if (psock->ready_rx_msg)
-		return 0;
-
-	head = psock->rx_skb_head;
-	if (head) {
-		/* Message already in progress */
-
-		if (unlikely(orig_offset)) {
-			/* Getting data with a non-zero offset when a message is
-			 * in progress is not expected. If it does happen, we
-			 * need to clone and pull since we can't deal with
-			 * offsets in the skbs for a message expect in the head.
-			 */
-			orig_skb = skb_clone(orig_skb, GFP_ATOMIC);
-			if (!orig_skb) {
-				desc->error = -ENOMEM;
-				return 0;
-			}
-			if (!pskb_pull(orig_skb, orig_offset)) {
-				kfree_skb(orig_skb);
-				desc->error = -ENOMEM;
-				return 0;
-			}
-			cloned_orig = true;
-			orig_offset = 0;
-		}
-
-		if (!psock->rx_skb_nextp) {
-			/* We are going to append to the frags_list of head.
-			 * Need to unshare the frag_list.
-			 */
-			err = skb_unclone(head, GFP_ATOMIC);
-			if (err) {
-				desc->error = err;
-				return 0;
-			}
-
-			if (unlikely(skb_shinfo(head)->frag_list)) {
-				/* We can't append to an sk_buff that already
-				 * has a frag_list. We create a new head, point
-				 * the frag_list of that to the old head, and
-				 * then are able to use the old head->next for
-				 * appending to the message.
-				 */
-				if (WARN_ON(head->next)) {
-					desc->error = -EINVAL;
-					return 0;
-				}
-
-				skb = alloc_skb(0, GFP_ATOMIC);
-				if (!skb) {
-					desc->error = -ENOMEM;
-					return 0;
-				}
-				skb->len = head->len;
-				skb->data_len = head->len;
-				skb->truesize = head->truesize;
-				*kcm_rx_msg(skb) = *kcm_rx_msg(head);
-				psock->rx_skb_nextp = &head->next;
-				skb_shinfo(skb)->frag_list = head;
-				psock->rx_skb_head = skb;
-				head = skb;
-			} else {
-				psock->rx_skb_nextp =
-				    &skb_shinfo(head)->frag_list;
-			}
-		}
-	}
-
-	while (eaten < orig_len) {
-		/* Always clone since we will consume something */
-		skb = skb_clone(orig_skb, GFP_ATOMIC);
-		if (!skb) {
-			desc->error = -ENOMEM;
-			break;
-		}
-
-		cand_len = orig_len - eaten;
-
-		head = psock->rx_skb_head;
-		if (!head) {
-			head = skb;
-			psock->rx_skb_head = head;
-			/* Will set rx_skb_nextp on next packet if needed */
-			psock->rx_skb_nextp = NULL;
-			rxm = kcm_rx_msg(head);
-			memset(rxm, 0, sizeof(*rxm));
-			rxm->offset = orig_offset + eaten;
-		} else {
-			/* Unclone since we may be appending to an skb that we
-			 * already share a frag_list with.
-			 */
-			err = skb_unclone(skb, GFP_ATOMIC);
-			if (err) {
-				desc->error = err;
-				break;
-			}
-
-			rxm = kcm_rx_msg(head);
-			*psock->rx_skb_nextp = skb;
-			psock->rx_skb_nextp = &skb->next;
-			head->data_len += skb->len;
-			head->len += skb->len;
-			head->truesize += skb->truesize;
-		}
-
-		if (!rxm->full_len) {
-			ssize_t len;
-
-			len = KCM_RUN_FILTER(psock->bpf_prog, head);
-
-			if (!len) {
-				/* Need more header to determine length */
-				rxm->accum_len += cand_len;
-				eaten += cand_len;
-				WARN_ON(eaten != orig_len);
-				break;
-			} else if (len <= (ssize_t)head->len -
-					  skb->len - rxm->offset) {
-				/* Length must be into new skb (and also
-				 * greater than zero)
-				 */
-				desc->error = -EPROTO;
-				psock->rx_skb_head = NULL;
-				kcm_abort_rx_psock(psock, EPROTO, head);
-				break;
-			}
-
-			rxm->full_len = len;
-		}
-
-		extra = (ssize_t)(rxm->accum_len + cand_len) - rxm->full_len;
-
-		if (extra < 0) {
-			/* Message not complete yet. */
-			rxm->accum_len += cand_len;
-			eaten += cand_len;
-			WARN_ON(eaten != orig_len);
-			break;
-		}
-
-		/* Positive extra indicates ore bytes than needed for the
-		 * message
-		 */
-
-		WARN_ON(extra > cand_len);
-
-		eaten += (cand_len - extra);
-
-		/* Hurray, we have a new message! */
-		psock->rx_skb_head = NULL;
-
-try_queue:
-		kcm = reserve_rx_kcm(psock, head);
-		if (!kcm) {
-			/* Unable to reserve a KCM, message is held in psock. */
-			break;
-		}
-
-		if (kcm_queue_rcv_skb(&kcm->sk, head)) {
-			/* Should mean socket buffer full */
-			unreserve_rx_kcm(psock, false);
-			goto try_queue;
-		}
-	}
-
-	if (cloned_orig)
-		kfree_skb(orig_skb);
-
-	return eaten;
-}
-
-/* Called with lock held on lower socket */
-static int psock_tcp_read_sock(struct kcm_psock *psock)
-{
-	read_descriptor_t desc;
-
-	desc.arg.data = psock;
-	desc.error = 0;
-	desc.count = 1; /* give more than one skb per call */
-
-	/* sk should be locked here, so okay to do tcp_read_sock */
-	tcp_read_sock(psock->sk, &desc, kcm_tcp_recv);
-
-	unreserve_rx_kcm(psock, true);
-
-	return desc.error;
-}
-
 /* Lower sock lock held */
-static void psock_tcp_data_ready(struct sock *sk)
+static void psock_data_ready(struct sock *sk)
 {
 	struct kcm_psock *psock;
 
 	read_lock_bh(&sk->sk_callback_lock);
 
 	psock = (struct kcm_psock *)sk->sk_user_data;
-	if (unlikely(!psock || psock->rx_stopped))
-		goto out;
+	if (likely(psock))
+		strp_data_ready(&psock->strp);
 
-	if (psock->ready_rx_msg)
-		goto out;
-
-	if (psock_tcp_read_sock(psock) == -ENOMEM)
-		queue_delayed_work(kcm_wq, &psock->rx_delayed_work, 0);
-
-out:
 	read_unlock_bh(&sk->sk_callback_lock);
 }
 
-static void do_psock_rx_work(struct kcm_psock *psock)
+/* Called with lower sock held */
+static void kcm_rcv_strparser(struct strparser *strp, struct sk_buff *skb)
 {
-	read_descriptor_t rd_desc;
-	struct sock *csk = psock->sk;
+	struct kcm_psock *psock = container_of(strp, struct kcm_psock, strp);
+	struct kcm_sock *kcm;
 
-	/* We need the read lock to synchronize with psock_tcp_data_ready. We
-	 * need the socket lock for calling tcp_read_sock.
-	 */
-	lock_sock(csk);
-	read_lock_bh(&csk->sk_callback_lock);
+try_queue:
+	kcm = reserve_rx_kcm(psock, skb);
+	if (!kcm) {
+		 /* Unable to reserve a KCM, message is held in psock and strp
+		  * is paused.
+		  */
+		return;
+	}
 
-	if (unlikely(csk->sk_user_data != psock))
-		goto out;
-
-	if (unlikely(psock->rx_stopped))
-		goto out;
-
-	if (psock->ready_rx_msg)
-		goto out;
-
-	rd_desc.arg.data = psock;
-
-	if (psock_tcp_read_sock(psock) == -ENOMEM)
-		queue_delayed_work(kcm_wq, &psock->rx_delayed_work, 0);
-
-out:
-	read_unlock_bh(&csk->sk_callback_lock);
-	release_sock(csk);
+	if (kcm_queue_rcv_skb(&kcm->sk, skb)) {
+		/* Should mean socket buffer full */
+		unreserve_rx_kcm(psock, false);
+		goto try_queue;
+	}
 }
 
-static void psock_rx_work(struct work_struct *w)
+static int kcm_parse_func_strparser(struct strparser *strp, struct sk_buff *skb)
 {
-	do_psock_rx_work(container_of(w, struct kcm_psock, rx_work));
+	struct kcm_psock *psock = container_of(strp, struct kcm_psock, strp);
+	struct bpf_prog *prog = psock->bpf_prog;
+
+	return (*prog->bpf_func)(skb, prog->insnsi);
 }
 
-static void psock_rx_delayed_work(struct work_struct *w)
+static int kcm_read_sock_done(struct strparser *strp, int err)
 {
-	do_psock_rx_work(container_of(w, struct kcm_psock,
-				      rx_delayed_work.work));
+	struct kcm_psock *psock = container_of(strp, struct kcm_psock, strp);
+
+	unreserve_rx_kcm(psock, true);
+
+	return err;
 }
 
-static void psock_tcp_state_change(struct sock *sk)
+static void psock_state_change(struct sock *sk)
 {
 	/* TCP only does a POLLIN for a half close. Do a POLLHUP here
 	 * since application will normally not poll with POLLIN
@@ -602,7 +402,7 @@ static void psock_tcp_state_change(struct sock *sk)
 	report_csk_error(sk, EPIPE);
 }
 
-static void psock_tcp_write_space(struct sock *sk)
+static void psock_write_space(struct sock *sk)
 {
 	struct kcm_psock *psock;
 	struct kcm_mux *mux;
@@ -613,14 +413,13 @@ static void psock_tcp_write_space(struct sock *sk)
 	psock = (struct kcm_psock *)sk->sk_user_data;
 	if (unlikely(!psock))
 		goto out;
-
 	mux = psock->mux;
 
 	spin_lock_bh(&mux->lock);
 
 	/* Check if the socket is reserved so someone is waiting for sending. */
 	kcm = psock->tx_kcm;
-	if (kcm)
+	if (kcm && !unlikely(kcm->tx_stopped))
 		queue_work(kcm_wq, &kcm->tx_work);
 
 	spin_unlock_bh(&mux->lock);
@@ -671,6 +470,7 @@ static struct kcm_psock *reserve_psock(struct kcm_sock *kcm)
 		}
 		kcm->tx_psock = psock;
 		psock->tx_kcm = kcm;
+		KCM_STATS_INCR(psock->stats.reserved);
 	} else if (!kcm->tx_wait) {
 		list_add_tail(&kcm->wait_psock_list,
 			      &mux->kcm_tx_waiters);
@@ -705,6 +505,7 @@ static void psock_now_avail(struct kcm_psock *psock)
 		smp_mb();
 
 		kcm->tx_psock = psock;
+		KCM_STATS_INCR(psock->stats.reserved);
 		queue_work(kcm_wq, &kcm->tx_work);
 	}
 }
@@ -726,10 +527,13 @@ static void unreserve_psock(struct kcm_sock *kcm)
 
 	smp_rmb(); /* Read tx_psock before tx_wait */
 
+	kcm_update_tx_mux_stats(mux, psock);
+
 	WARN_ON(kcm->tx_wait);
 
 	kcm->tx_psock = NULL;
 	psock->tx_kcm = NULL;
+	KCM_STATS_INCR(psock->stats.unreserved);
 
 	if (unlikely(psock->tx_stopped)) {
 		if (psock->done) {
@@ -753,6 +557,15 @@ static void unreserve_psock(struct kcm_sock *kcm)
 	spin_unlock_bh(&mux->lock);
 }
 
+static void kcm_report_tx_retry(struct kcm_sock *kcm)
+{
+	struct kcm_mux *mux = kcm->mux;
+
+	spin_lock_bh(&mux->lock);
+	KCM_STATS_INCR(mux->stats.tx_retries);
+	spin_unlock_bh(&mux->lock);
+}
+
 /* Write any messages ready on the kcm socket.  Called with kcm sock lock
  * held.  Return bytes actually sent or error.
  */
@@ -773,6 +586,7 @@ static int kcm_write_msgs(struct kcm_sock *kcm)
 		 * it and we'll retry the message.
 		 */
 		unreserve_psock(kcm);
+		kcm_report_tx_retry(kcm);
 		if (skb_queue_empty(&sk->sk_write_queue))
 			return 0;
 
@@ -856,6 +670,7 @@ do_frag:
 				unreserve_psock(kcm);
 
 				txm->sent = 0;
+				kcm_report_tx_retry(kcm);
 				ret = 0;
 
 				goto try_again;
@@ -863,6 +678,7 @@ do_frag:
 
 			sent += ret;
 			frag_offset += ret;
+			KCM_STATS_ADD(psock->stats.tx_bytes, ret);
 			if (frag_offset < frag->size) {
 				/* Not finished with this frag */
 				goto do_frag;
@@ -884,6 +700,7 @@ do_frag:
 		kfree_skb(head);
 		sk->sk_wmem_queued -= sent;
 		total_sent += sent;
+		KCM_STATS_INCR(psock->stats.tx_msgs);
 	} while ((head = skb_peek(&sk->sk_write_queue)));
 out:
 	if (!head) {
@@ -932,6 +749,149 @@ static void kcm_push(struct kcm_sock *kcm)
 {
 	if (kcm->tx_wait_more)
 		kcm_write_msgs(kcm);
+}
+
+static ssize_t kcm_sendpage(struct socket *sock, struct page *page,
+			    int offset, size_t size, int flags)
+
+{
+	struct sock *sk = sock->sk;
+	struct kcm_sock *kcm = kcm_sk(sk);
+	struct sk_buff *skb = NULL, *head = NULL;
+	long timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
+	bool eor;
+	int err = 0;
+	int i;
+
+	if (flags & MSG_SENDPAGE_NOTLAST)
+		flags |= MSG_MORE;
+
+	/* No MSG_EOR from splice, only look at MSG_MORE */
+	eor = !(flags & MSG_MORE);
+
+	lock_sock(sk);
+
+	sk_clear_bit(SOCKWQ_ASYNC_NOSPACE, sk);
+
+	err = -EPIPE;
+	if (sk->sk_err)
+		goto out_error;
+
+	if (kcm->seq_skb) {
+		/* Previously opened message */
+		head = kcm->seq_skb;
+		skb = kcm_tx_msg(head)->last_skb;
+		i = skb_shinfo(skb)->nr_frags;
+
+		if (skb_can_coalesce(skb, i, page, offset)) {
+			skb_frag_size_add(&skb_shinfo(skb)->frags[i - 1], size);
+			skb_shinfo(skb)->tx_flags |= SKBTX_SHARED_FRAG;
+			goto coalesced;
+		}
+
+		if (i >= MAX_SKB_FRAGS) {
+			struct sk_buff *tskb;
+
+			tskb = alloc_skb(0, sk->sk_allocation);
+			while (!tskb) {
+				kcm_push(kcm);
+				err = sk_stream_wait_memory(sk, &timeo);
+				if (err)
+					goto out_error;
+			}
+
+			if (head == skb)
+				skb_shinfo(head)->frag_list = tskb;
+			else
+				skb->next = tskb;
+
+			skb = tskb;
+			skb->ip_summed = CHECKSUM_UNNECESSARY;
+			i = 0;
+		}
+	} else {
+		/* Call the sk_stream functions to manage the sndbuf mem. */
+		if (!sk_stream_memory_free(sk)) {
+			kcm_push(kcm);
+			set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+			err = sk_stream_wait_memory(sk, &timeo);
+			if (err)
+				goto out_error;
+		}
+
+		head = alloc_skb(0, sk->sk_allocation);
+		while (!head) {
+			kcm_push(kcm);
+			err = sk_stream_wait_memory(sk, &timeo);
+			if (err)
+				goto out_error;
+		}
+
+		skb = head;
+		i = 0;
+	}
+
+	get_page(page);
+	skb_fill_page_desc(skb, i, page, offset, size);
+	skb_shinfo(skb)->tx_flags |= SKBTX_SHARED_FRAG;
+
+coalesced:
+	skb->len += size;
+	skb->data_len += size;
+	skb->truesize += size;
+	sk->sk_wmem_queued += size;
+	sk_mem_charge(sk, size);
+
+	if (head != skb) {
+		head->len += size;
+		head->data_len += size;
+		head->truesize += size;
+	}
+
+	if (eor) {
+		bool not_busy = skb_queue_empty(&sk->sk_write_queue);
+
+		/* Message complete, queue it on send buffer */
+		__skb_queue_tail(&sk->sk_write_queue, head);
+		kcm->seq_skb = NULL;
+		KCM_STATS_INCR(kcm->stats.tx_msgs);
+
+		if (flags & MSG_BATCH) {
+			kcm->tx_wait_more = true;
+		} else if (kcm->tx_wait_more || not_busy) {
+			err = kcm_write_msgs(kcm);
+			if (err < 0) {
+				/* We got a hard error in write_msgs but have
+				 * already queued this message. Report an error
+				 * in the socket, but don't affect return value
+				 * from sendmsg
+				 */
+				pr_warn("KCM: Hard failure on kcm_write_msgs\n");
+				report_csk_error(&kcm->sk, -err);
+			}
+		}
+	} else {
+		/* Message not complete, save state */
+		kcm->seq_skb = head;
+		kcm_tx_msg(head)->last_skb = skb;
+	}
+
+	KCM_STATS_ADD(kcm->stats.tx_bytes, size);
+
+	release_sock(sk);
+	return size;
+
+out_error:
+	kcm_push(kcm);
+
+	err = sk_stream_error(sk, flags, err);
+
+	/* make sure we wake any epoll edge trigger waiter */
+	if (unlikely(skb_queue_len(&sk->sk_write_queue) == 0 && err == -EAGAIN))
+		sk->sk_write_space(sk);
+
+	release_sock(sk);
+	return err;
 }
 
 static int kcm_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
@@ -1061,6 +1021,7 @@ wait_for_memory:
 		/* Message complete, queue it on send buffer */
 		__skb_queue_tail(&sk->sk_write_queue, head);
 		kcm->seq_skb = NULL;
+		KCM_STATS_INCR(kcm->stats.tx_msgs);
 
 		if (msg->msg_flags & MSG_BATCH) {
 			kcm->tx_wait_more = true;
@@ -1082,6 +1043,8 @@ partial_message:
 		kcm->seq_skb = head;
 		kcm_tx_msg(head)->last_skb = skb;
 	}
+
+	KCM_STATS_ADD(kcm->stats.tx_bytes, copied);
 
 	release_sock(sk);
 	return copied;
@@ -1144,9 +1107,10 @@ static int kcm_recvmsg(struct socket *sock, struct msghdr *msg,
 		       size_t len, int flags)
 {
 	struct sock *sk = sock->sk;
+	struct kcm_sock *kcm = kcm_sk(sk);
 	int err = 0;
 	long timeo;
-	struct kcm_rx_msg *rxm;
+	struct strp_rx_msg *rxm;
 	int copied = 0;
 	struct sk_buff *skb;
 
@@ -1160,7 +1124,7 @@ static int kcm_recvmsg(struct socket *sock, struct msghdr *msg,
 
 	/* Okay, have a message on the receive queue */
 
-	rxm = kcm_rx_msg(skb);
+	rxm = strp_rx_msg(skb);
 
 	if (len > rxm->full_len)
 		len = rxm->full_len;
@@ -1171,6 +1135,7 @@ static int kcm_recvmsg(struct socket *sock, struct msghdr *msg,
 
 	copied = len;
 	if (likely(!(flags & MSG_PEEK))) {
+		KCM_STATS_ADD(kcm->stats.rx_bytes, copied);
 		if (copied < rxm->full_len) {
 			if (sock->type == SOCK_DGRAM) {
 				/* Truncated message */
@@ -1183,6 +1148,7 @@ static int kcm_recvmsg(struct socket *sock, struct msghdr *msg,
 msg_finished:
 			/* Finished with message */
 			msg->msg_flags |= MSG_EOR;
+			KCM_STATS_INCR(kcm->stats.rx_msgs);
 			skb_unlink(skb, &sk->sk_receive_queue);
 			kfree_skb(skb);
 		}
@@ -1192,6 +1158,62 @@ out:
 	release_sock(sk);
 
 	return copied ? : err;
+}
+
+static ssize_t kcm_splice_read(struct socket *sock, loff_t *ppos,
+			       struct pipe_inode_info *pipe, size_t len,
+			       unsigned int flags)
+{
+	struct sock *sk = sock->sk;
+	struct kcm_sock *kcm = kcm_sk(sk);
+	long timeo;
+	struct strp_rx_msg *rxm;
+	int err = 0;
+	ssize_t copied;
+	struct sk_buff *skb;
+
+	/* Only support splice for SOCKSEQPACKET */
+
+	timeo = sock_rcvtimeo(sk, flags & MSG_DONTWAIT);
+
+	lock_sock(sk);
+
+	skb = kcm_wait_data(sk, flags, timeo, &err);
+	if (!skb)
+		goto err_out;
+
+	/* Okay, have a message on the receive queue */
+
+	rxm = strp_rx_msg(skb);
+
+	if (len > rxm->full_len)
+		len = rxm->full_len;
+
+	copied = skb_splice_bits(skb, sk, rxm->offset, pipe, len, flags);
+	if (copied < 0) {
+		err = copied;
+		goto err_out;
+	}
+
+	KCM_STATS_ADD(kcm->stats.rx_bytes, copied);
+
+	rxm->offset += copied;
+	rxm->full_len -= copied;
+
+	/* We have no way to return MSG_EOR. If all the bytes have been
+	 * read we still leave the message in the receive socket buffer.
+	 * A subsequent recvmsg needs to be done to return MSG_EOR and
+	 * finish reading the message.
+	 */
+
+	release_sock(sk);
+
+	return copied;
+
+err_out:
+	release_sock(sk);
+
+	return err;
 }
 
 /* kcm sock lock held */
@@ -1346,17 +1368,11 @@ static int kcm_attach(struct socket *sock, struct socket *csock,
 	struct kcm_psock *psock = NULL, *tpsock;
 	struct list_head *head;
 	int index = 0;
-
-	if (csock->ops->family != PF_INET &&
-	    csock->ops->family != PF_INET6)
-		return -EINVAL;
+	struct strp_callbacks cb;
+	int err;
 
 	csk = csock->sk;
 	if (!csk)
-		return -EINVAL;
-
-	/* Only support TCP for now */
-	if (csk->sk_protocol != IPPROTO_TCP)
 		return -EINVAL;
 
 	psock = kmem_cache_zalloc(kcm_psockp, GFP_KERNEL);
@@ -1366,8 +1382,17 @@ static int kcm_attach(struct socket *sock, struct socket *csock,
 	psock->mux = mux;
 	psock->sk = csk;
 	psock->bpf_prog = prog;
-	INIT_WORK(&psock->rx_work, psock_rx_work);
-	INIT_DELAYED_WORK(&psock->rx_delayed_work, psock_rx_delayed_work);
+
+	cb.rcv_msg = kcm_rcv_strparser;
+	cb.abort_parser = NULL;
+	cb.parse_msg = kcm_parse_func_strparser;
+	cb.read_sock_done = kcm_read_sock_done;
+
+	err = strp_init(&psock->strp, csk, &cb);
+	if (err) {
+		kmem_cache_free(kcm_psockp, psock);
+		return err;
+	}
 
 	sock_hold(csk);
 
@@ -1376,9 +1401,9 @@ static int kcm_attach(struct socket *sock, struct socket *csock,
 	psock->save_write_space = csk->sk_write_space;
 	psock->save_state_change = csk->sk_state_change;
 	csk->sk_user_data = psock;
-	csk->sk_data_ready = psock_tcp_data_ready;
-	csk->sk_write_space = psock_tcp_write_space;
-	csk->sk_state_change = psock_tcp_state_change;
+	csk->sk_data_ready = psock_data_ready;
+	csk->sk_write_space = psock_write_space;
+	csk->sk_state_change = psock_state_change;
 	write_unlock_bh(&csk->sk_callback_lock);
 
 	/* Finished initialization, now add the psock to the MUX. */
@@ -1394,12 +1419,13 @@ static int kcm_attach(struct socket *sock, struct socket *csock,
 	list_add(&psock->psock_list, head);
 	psock->index = index;
 
+	KCM_STATS_INCR(mux->stats.psock_attach);
 	mux->psocks_cnt++;
 	psock_now_avail(psock);
 	spin_unlock_bh(&mux->lock);
 
 	/* Schedule RX work in case there are already bytes queued */
-	queue_work(kcm_wq, &psock->rx_work);
+	strp_check_rcv(&psock->strp);
 
 	return 0;
 }
@@ -1414,15 +1440,9 @@ static int kcm_attach_ioctl(struct socket *sock, struct kcm_attach *info)
 	if (!csock)
 		return -ENOENT;
 
-	prog = bpf_prog_get(info->bpf_fd);
+	prog = bpf_prog_get_type(info->bpf_fd, BPF_PROG_TYPE_SOCKET_FILTER);
 	if (IS_ERR(prog)) {
 		err = PTR_ERR(prog);
-		goto out;
-	}
-
-	if (prog->type != BPF_PROG_TYPE_SOCKET_FILTER) {
-		bpf_prog_put(prog);
-		err = -EINVAL;
 		goto out;
 	}
 
@@ -1445,6 +1465,8 @@ static void kcm_unattach(struct kcm_psock *psock)
 	struct sock *csk = psock->sk;
 	struct kcm_mux *mux = psock->mux;
 
+	lock_sock(csk);
+
 	/* Stop getting callbacks from TCP socket. After this there should
 	 * be no way to reserve a kcm for this psock.
 	 */
@@ -1453,7 +1475,7 @@ static void kcm_unattach(struct kcm_psock *psock)
 	csk->sk_data_ready = psock->save_data_ready;
 	csk->sk_write_space = psock->save_write_space;
 	csk->sk_state_change = psock->save_state_change;
-	psock->rx_stopped = 1;
+	strp_stop(&psock->strp);
 
 	if (WARN_ON(psock->rx_kcm)) {
 		write_unlock_bh(&csk->sk_callback_lock);
@@ -1469,27 +1491,33 @@ static void kcm_unattach(struct kcm_psock *psock)
 		list_del(&psock->psock_ready_list);
 		kfree_skb(psock->ready_rx_msg);
 		psock->ready_rx_msg = NULL;
+		KCM_STATS_INCR(mux->stats.rx_ready_drops);
 	}
 
 	spin_unlock_bh(&mux->rx_lock);
 
 	write_unlock_bh(&csk->sk_callback_lock);
 
-	cancel_work_sync(&psock->rx_work);
-	cancel_delayed_work_sync(&psock->rx_delayed_work);
+	/* Call strp_done without sock lock */
+	release_sock(csk);
+	strp_done(&psock->strp);
+	lock_sock(csk);
 
 	bpf_prog_put(psock->bpf_prog);
 
-	kfree_skb(psock->rx_skb_head);
-	psock->rx_skb_head = NULL;
-
 	spin_lock_bh(&mux->lock);
+
+	aggregate_psock_stats(&psock->stats, &mux->aggregate_psock_stats);
+	save_strp_stats(&psock->strp, &mux->aggregate_strp_stats);
+
+	KCM_STATS_INCR(mux->stats.psock_unattach);
 
 	if (psock->tx_kcm) {
 		/* psock was reserved.  Just mark it finished and we will clean
 		 * up in the kcm paths, we need kcm lock which can not be
 		 * acquired here.
 		 */
+		KCM_STATS_INCR(mux->stats.psock_unattach_rsvd);
 		spin_unlock_bh(&mux->lock);
 
 		/* We are unattaching a socket that is reserved. Abort the
@@ -1523,6 +1551,8 @@ no_reserved:
 		fput(csk->sk_socket->file);
 		kmem_cache_free(kcm_psockp, psock);
 	}
+
+	release_sock(csk);
 }
 
 static int kcm_unattach_ioctl(struct socket *sock, struct kcm_unattach *info)
@@ -1563,6 +1593,7 @@ static int kcm_unattach_ioctl(struct socket *sock, struct kcm_unattach *info)
 
 		spin_unlock_bh(&mux->lock);
 
+		/* Lower socket lock should already be held */
 		kcm_unattach(psock);
 
 		err = 0;
@@ -1677,7 +1708,7 @@ static int kcm_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 			if (copy_to_user((void __user *)arg, &info,
 					 sizeof(info))) {
 				err = -EFAULT;
-				sock_release(newsock);
+				sys_close(info.fd);
 			}
 		}
 
@@ -1717,6 +1748,11 @@ static void release_mux(struct kcm_mux *mux)
 	__skb_queue_purge(&mux->rx_hold_queue);
 
 	mutex_lock(&knet->mutex);
+	aggregate_mux_stats(&mux->stats, &knet->aggregate_mux_stats);
+	aggregate_psock_stats(&mux->aggregate_psock_stats,
+			      &knet->aggregate_psock_stats);
+	aggregate_strp_stats(&mux->aggregate_strp_stats,
+			     &knet->aggregate_strp_stats);
 	list_del_rcu(&mux->kcm_mux_list);
 	knet->count--;
 	mutex_unlock(&knet->mutex);
@@ -1796,6 +1832,13 @@ static int kcm_release(struct socket *sock)
 	 * it will just return.
 	 */
 	__skb_queue_purge(&sk->sk_write_queue);
+
+	/* Set tx_stopped. This is checked when psock is bound to a kcm and we
+	 * get a writespace callback. This prevents further work being queued
+	 * from the callback (unbinding the psock occurs after canceling work.
+	 */
+	kcm->tx_stopped = 1;
+
 	release_sock(sk);
 
 	spin_lock_bh(&mux->lock);
@@ -1835,7 +1878,7 @@ static int kcm_release(struct socket *sock)
 	return 0;
 }
 
-static const struct proto_ops kcm_ops = {
+static const struct proto_ops kcm_dgram_ops = {
 	.family =	PF_KCM,
 	.owner =	THIS_MODULE,
 	.release =	kcm_release,
@@ -1853,7 +1896,29 @@ static const struct proto_ops kcm_ops = {
 	.sendmsg =	kcm_sendmsg,
 	.recvmsg =	kcm_recvmsg,
 	.mmap =		sock_no_mmap,
-	.sendpage =	sock_no_sendpage,
+	.sendpage =	kcm_sendpage,
+};
+
+static const struct proto_ops kcm_seqpacket_ops = {
+	.family =	PF_KCM,
+	.owner =	THIS_MODULE,
+	.release =	kcm_release,
+	.bind =		sock_no_bind,
+	.connect =	sock_no_connect,
+	.socketpair =	sock_no_socketpair,
+	.accept =	sock_no_accept,
+	.getname =	sock_no_getname,
+	.poll =		datagram_poll,
+	.ioctl =	kcm_ioctl,
+	.listen =	sock_no_listen,
+	.shutdown =	sock_no_shutdown,
+	.setsockopt =	kcm_setsockopt,
+	.getsockopt =	kcm_getsockopt,
+	.sendmsg =	kcm_sendmsg,
+	.recvmsg =	kcm_recvmsg,
+	.mmap =		sock_no_mmap,
+	.sendpage =	kcm_sendpage,
+	.splice_read =	kcm_splice_read,
 };
 
 /* Create proto operation for kcm sockets */
@@ -1866,8 +1931,10 @@ static int kcm_create(struct net *net, struct socket *sock,
 
 	switch (sock->type) {
 	case SOCK_DGRAM:
+		sock->ops = &kcm_dgram_ops;
+		break;
 	case SOCK_SEQPACKET:
-		sock->ops = &kcm_ops;
+		sock->ops = &kcm_seqpacket_ops;
 		break;
 	default:
 		return -ESOCKTNOSUPPORT;
@@ -1979,7 +2046,14 @@ static int __init kcm_init(void)
 	if (err)
 		goto net_ops_fail;
 
+	err = kcm_proc_init();
+	if (err)
+		goto proc_init_fail;
+
 	return 0;
+
+proc_init_fail:
+	unregister_pernet_device(&kcm_net_ops);
 
 net_ops_fail:
 	sock_unregister(PF_KCM);
@@ -1999,6 +2073,7 @@ fail:
 
 static void __exit kcm_exit(void)
 {
+	kcm_proc_exit();
 	unregister_pernet_device(&kcm_net_ops);
 	sock_unregister(PF_KCM);
 	proto_unregister(&kcm_proto);

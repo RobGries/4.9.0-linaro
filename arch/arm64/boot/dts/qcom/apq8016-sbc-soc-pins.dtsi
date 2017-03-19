@@ -15,7 +15,7 @@
 		};
 	};
 
-	usb_id_default: usb_id_default {
+	usb_id_default: usb-id-default {
 		pinmux {
 			function = "gpio";
 			pins = "gpio121";
@@ -23,7 +23,6 @@
 
 		pinconf {
 			pins = "gpio121";
-			function = "gpio";
 			drive-strength = <8>;
 			input-enable;
 			bias-pull-up;

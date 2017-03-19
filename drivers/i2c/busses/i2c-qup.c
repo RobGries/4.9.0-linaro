@@ -14,8 +14,12 @@
  *
  */
 
+#include <linux/atomic.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
+#include <linux/dmaengine.h>
+#include <linux/dmapool.h>
+#include <linux/dma-mapping.h>
 #include <linux/err.h>
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
@@ -24,11 +28,7 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
-#include <linux/dma-mapping.h>
 #include <linux/scatterlist.h>
-#include <linux/atomic.h>
-#include <linux/dmaengine.h>
-#include <linux/dmapool.h>
 
 /* QUP Registers */
 #define QUP_CONFIG		0x000
@@ -48,7 +48,6 @@
 #define QUP_IN_FIFO_BASE	0x218
 #define QUP_I2C_CLK_CTL		0x400
 #define QUP_I2C_STATUS		0x404
-
 #define QUP_I2C_MASTER_GEN	0x408
 
 /* QUP States and reset values */
@@ -140,7 +139,6 @@ struct qup_i2c_block {
 	int	rx_tag_len;
 	int	data_len;
 	u8	tags[6];
-	int     config_run;
 };
 
 struct qup_i2c_tag {
@@ -148,16 +146,10 @@ struct qup_i2c_tag {
 	dma_addr_t addr;
 };
 
-struct qup_i2c_bam_rx {
-	struct	qup_i2c_tag scratch_tag;
-	struct	dma_chan *dma_rx;
-	struct	scatterlist *sg_rx;
-};
-
-struct qup_i2c_bam_tx {
-	struct	qup_i2c_tag footer_tag;
-	struct	dma_chan *dma_tx;
-	struct	scatterlist *sg_tx;
+struct qup_i2c_bam {
+	struct	qup_i2c_tag tag;
+	struct	dma_chan *dma;
+	struct	scatterlist *sg;
 };
 
 struct qup_i2c_dev {
@@ -185,24 +177,19 @@ struct qup_i2c_dev {
 	/* QUP core errors */
 	u32			qup_err;
 
-	int			use_v2_tags;
+	/* To check if this is the last msg */
+	bool			is_last;
 
-	int (*qup_i2c_write_one)(struct qup_i2c_dev *qup,
-				 struct i2c_msg *msg);
-	int (*qup_i2c_read_one)(struct qup_i2c_dev *qup,
-				struct i2c_msg *msg);
-
-	/* Current i2c_msg in i2c_msgs */
-	int			cmsg;
-	/* total num of i2c_msgs */
-	int			num;
+	/* To configure when bus is in run state */
+	int			config_run;
 
 	/* dma parameters */
 	bool			is_dma;
 	struct			dma_pool *dpool;
 	struct			qup_i2c_tag start_tag;
-	struct			qup_i2c_bam_rx brx;
-	struct			qup_i2c_bam_tx btx;
+	struct			qup_i2c_bam brx;
+	struct			qup_i2c_bam btx;
+
 	struct completion	xfer;
 };
 
@@ -226,14 +213,16 @@ static irqreturn_t qup_i2c_interrupt(int irq, void *dev)
 	bus_err &= I2C_STATUS_ERROR_MASK;
 	qup_err &= QUP_STATUS_ERROR_FLAGS;
 
-	if (qup_err) {
-		/* Clear Error interrupt */
+	/* Clear the error bits in QUP_ERROR_FLAGS */
+	if (qup_err)
 		writel(qup_err, qup->base + QUP_ERROR_FLAGS);
-		goto done;
-	}
 
-	if (bus_err) {
-		/* Clear Error interrupt */
+	/* Clear the error bits in QUP_I2C_STATUS */
+	if (bus_err)
+		writel(bus_err, qup->base + QUP_I2C_STATUS);
+
+	/* Reset the QUP State in case of error */
+	if (qup_err || bus_err) {
 		writel(QUP_RESET_STATE, qup->base + QUP_STATE);
 		goto done;
 	}
@@ -323,6 +312,7 @@ static int qup_i2c_wait_ready(struct qup_i2c_dev *qup, int op, bool val,
 	u32 opflags;
 	u32 status;
 	u32 shift = __ffs(op);
+	int ret = 0;
 
 	len *= qup->one_byte_t;
 	/* timeout after a wait of twice the max time */
@@ -333,39 +323,98 @@ static int qup_i2c_wait_ready(struct qup_i2c_dev *qup, int op, bool val,
 		status = readl(qup->base + QUP_I2C_STATUS);
 
 		if (((opflags & op) >> shift) == val) {
-			if ((op == QUP_OUT_NOT_EMPTY) &&
-			    (qup->cmsg == (qup->num - 1))) {
-				if (!(status & I2C_STATUS_BUS_ACTIVE))
-					return 0;
+			if ((op == QUP_OUT_NOT_EMPTY) && qup->is_last) {
+				if (!(status & I2C_STATUS_BUS_ACTIVE)) {
+					ret = 0;
+					goto done;
+				}
 			} else {
-				return 0;
+				ret = 0;
+				goto done;
 			}
 		}
 
-		if (time_after(jiffies, timeout))
-			return -ETIMEDOUT;
-
+		if (time_after(jiffies, timeout)) {
+			ret = -ETIMEDOUT;
+			goto done;
+		}
 		usleep_range(len, len * 2);
+	}
+
+done:
+	if (qup->bus_err || qup->qup_err)
+		ret =  (qup->bus_err & QUP_I2C_NACK_FLAG) ? -ENXIO : -EIO;
+
+	return ret;
+}
+
+static void qup_i2c_set_write_mode_v2(struct qup_i2c_dev *qup,
+				      struct i2c_msg *msg)
+{
+	/* Number of entries to shift out, including the tags */
+	int total = msg->len + qup->blk.tx_tag_len;
+
+	total |= qup->config_run;
+
+	if (total < qup->out_fifo_sz) {
+		/* FIFO mode */
+		writel(QUP_REPACK_EN, qup->base + QUP_IO_MODE);
+		writel(total, qup->base + QUP_MX_WRITE_CNT);
+	} else {
+		/* BLOCK mode (transfer data on chunks) */
+		writel(QUP_OUTPUT_BLK_MODE | QUP_REPACK_EN,
+		       qup->base + QUP_IO_MODE);
+		writel(total, qup->base + QUP_MX_OUTPUT_CNT);
 	}
 }
 
 static void qup_i2c_set_write_mode(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 {
 	/* Number of entries to shift out, including the start */
-	int total = msg->len + qup->blk.tx_tag_len;
+	int total = msg->len + 1;
 
 	if (total < qup->out_fifo_sz) {
 		/* FIFO mode */
 		writel(QUP_REPACK_EN, qup->base + QUP_IO_MODE);
-		writel(total | qup->blk.config_run,
-		       qup->base + QUP_MX_WRITE_CNT);
+		writel(total, qup->base + QUP_MX_WRITE_CNT);
 	} else {
 		/* BLOCK mode (transfer data on chunks) */
 		writel(QUP_OUTPUT_BLK_MODE | QUP_REPACK_EN,
 		       qup->base + QUP_IO_MODE);
-		writel(total | qup->blk.config_run,
-		       qup->base + QUP_MX_OUTPUT_CNT);
+		writel(total, qup->base + QUP_MX_OUTPUT_CNT);
 	}
+}
+
+static int check_for_fifo_space(struct qup_i2c_dev *qup)
+{
+	int ret;
+
+	ret = qup_i2c_change_state(qup, QUP_PAUSE_STATE);
+	if (ret)
+		goto out;
+
+	ret = qup_i2c_wait_ready(qup, QUP_OUT_FULL,
+				 RESET_BIT, 4 * ONE_BYTE);
+	if (ret) {
+		/* Fifo is full. Drain out the fifo */
+		ret = qup_i2c_change_state(qup, QUP_RUN_STATE);
+		if (ret)
+			goto out;
+
+		ret = qup_i2c_wait_ready(qup, QUP_OUT_NOT_EMPTY,
+					 RESET_BIT, 256 * ONE_BYTE);
+		if (ret) {
+			dev_err(qup->dev, "timeout for fifo out full");
+			goto out;
+		}
+
+		ret = qup_i2c_change_state(qup, QUP_PAUSE_STATE);
+		if (ret)
+			goto out;
+	}
+
+out:
+	return ret;
 }
 
 static int qup_i2c_issue_write(struct qup_i2c_dev *qup, struct i2c_msg *msg)
@@ -386,8 +435,7 @@ static int qup_i2c_issue_write(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 
 	while (qup->pos < msg->len) {
 		/* Check that there's space in the FIFO for our pair */
-		ret = qup_i2c_wait_ready(qup, QUP_OUT_FULL, RESET_BIT,
-					 4 * ONE_BYTE);
+		ret = check_for_fifo_space(qup);
 		if (ret)
 			return ret;
 
@@ -409,19 +457,15 @@ static int qup_i2c_issue_write(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 		idx++;
 	}
 
+	ret = qup_i2c_change_state(qup, QUP_RUN_STATE);
+
 	return ret;
 }
 
-static void qup_i2c_get_blk_data(struct qup_i2c_dev *qup,
+static void qup_i2c_set_blk_data(struct qup_i2c_dev *qup,
 				 struct i2c_msg *msg)
 {
 	memset(&qup->blk, 0, sizeof(qup->blk));
-
-	if (!qup->use_v2_tags) {
-		if (!(msg->flags & I2C_M_RD))
-			qup->blk.tx_tag_len = 1;
-		return;
-	}
 
 	qup->blk.data_len = msg->len;
 	qup->blk.count = (msg->len + QUP_READ_LIMIT - 1) / QUP_READ_LIMIT;
@@ -432,9 +476,6 @@ static void qup_i2c_get_blk_data(struct qup_i2c_dev *qup,
 	/* There are 2 tag bytes that are read in to fifo for every block */
 	if (msg->flags & I2C_M_RD)
 		qup->blk.rx_tag_len = qup->blk.count * 2;
-
-	if (qup->cmsg)
-		qup->blk.config_run = QUP_I2C_MX_CONFIG_DURING_RUN;
 }
 
 static int qup_i2c_send_data(struct qup_i2c_dev *qup, int tlen, u8 *tbuf,
@@ -446,12 +487,9 @@ static int qup_i2c_send_data(struct qup_i2c_dev *qup, int tlen, u8 *tbuf,
 	int ret = 0;
 
 	while (len > 0) {
-		ret = qup_i2c_wait_ready(qup, QUP_OUT_FULL,
-					 RESET_BIT, 4 * ONE_BYTE);
-		if (ret) {
-			dev_dbg(qup->dev, "timeout for fifo out full");
+		ret = check_for_fifo_space(qup);
+		if (ret)
 			return ret;
-		}
 
 		t = (len >= 4) ? 4 : len;
 
@@ -470,6 +508,8 @@ static int qup_i2c_send_data(struct qup_i2c_dev *qup, int tlen, u8 *tbuf,
 		len -= 4;
 	}
 
+	ret = qup_i2c_change_state(qup, QUP_RUN_STATE);
+
 	return ret;
 }
 
@@ -485,15 +525,14 @@ static int qup_i2c_get_data_len(struct qup_i2c_dev *qup)
 	return data_len;
 }
 
-static int qup_i2c_get_tags(u8 *tags, struct qup_i2c_dev *qup,
-			    struct i2c_msg *msg, int is_dma)
+static int qup_i2c_set_tags(u8 *tags, struct qup_i2c_dev *qup,
+			    struct i2c_msg *msg,  int is_dma)
 {
-	u16 addr = (msg->addr << 1) | ((msg->flags & I2C_M_RD) == I2C_M_RD);
+	u16 addr = i2c_8bit_addr_from_msg(msg);
 	int len = 0;
 	int data_len;
 
-	int last = (qup->blk.pos == (qup->blk.count - 1)) &&
-		    (qup->cmsg == (qup->num - 1));
+	int last = (qup->blk.pos == (qup->blk.count - 1)) && (qup->is_last);
 
 	if (qup->blk.pos == 0) {
 		tags[len++] = QUP_TAG_V2_START;
@@ -537,7 +576,7 @@ static int qup_i2c_issue_xfer_v2(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 	int data_len = 0, tag_len, index;
 	int ret;
 
-	tag_len = qup_i2c_get_tags(qup->blk.tags, qup, msg, 0);
+	tag_len = qup_i2c_set_tags(qup->blk.tags, qup, msg, 0);
 	index = msg->len - qup->blk.data_len;
 
 	/* only tags are written for read */
@@ -548,6 +587,293 @@ static int qup_i2c_issue_xfer_v2(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 				data_len, &msg->buf[index]);
 	qup->blk.data_len -= data_len;
 
+	return ret;
+}
+
+static void qup_i2c_bam_cb(void *data)
+{
+	struct qup_i2c_dev *qup = data;
+
+	complete(&qup->xfer);
+}
+
+static int qup_sg_set_buf(struct scatterlist *sg, void *buf,
+			  unsigned int buflen, struct qup_i2c_dev *qup,
+			  int dir)
+{
+	int ret;
+
+	sg_set_buf(sg, buf, buflen);
+	ret = dma_map_sg(qup->dev, sg, 1, dir);
+	if (!ret)
+		return -EINVAL;
+
+	return 0;
+}
+
+static void qup_i2c_rel_dma(struct qup_i2c_dev *qup)
+{
+	if (qup->btx.dma)
+		dma_release_channel(qup->btx.dma);
+	if (qup->brx.dma)
+		dma_release_channel(qup->brx.dma);
+	qup->btx.dma = NULL;
+	qup->brx.dma = NULL;
+}
+
+static int qup_i2c_req_dma(struct qup_i2c_dev *qup)
+{
+	int err;
+
+	if (!qup->btx.dma) {
+		qup->btx.dma = dma_request_slave_channel_reason(qup->dev, "tx");
+		if (IS_ERR(qup->btx.dma)) {
+			err = PTR_ERR(qup->btx.dma);
+			qup->btx.dma = NULL;
+			dev_err(qup->dev, "\n tx channel not available");
+			return err;
+		}
+	}
+
+	if (!qup->brx.dma) {
+		qup->brx.dma = dma_request_slave_channel_reason(qup->dev, "rx");
+		if (IS_ERR(qup->brx.dma)) {
+			dev_err(qup->dev, "\n rx channel not available");
+			err = PTR_ERR(qup->brx.dma);
+			qup->brx.dma = NULL;
+			qup_i2c_rel_dma(qup);
+			return err;
+		}
+	}
+	return 0;
+}
+
+static int qup_i2c_bam_do_xfer(struct qup_i2c_dev *qup, struct i2c_msg *msg,
+			       int num)
+{
+	struct dma_async_tx_descriptor *txd, *rxd = NULL;
+	int ret = 0, idx = 0, limit = QUP_READ_LIMIT;
+	dma_cookie_t cookie_rx, cookie_tx;
+	u32 rx_nents = 0, tx_nents = 0, len, blocks, rem;
+	u32 i, tlen, tx_len, tx_buf = 0, rx_buf = 0, off = 0;
+	u8 *tags;
+
+	while (idx < num) {
+		tx_len = 0, len = 0, i = 0;
+
+		qup->is_last = (idx == (num - 1));
+
+		qup_i2c_set_blk_data(qup, msg);
+
+		blocks = qup->blk.count;
+		rem = msg->len - (blocks - 1) * limit;
+
+		if (msg->flags & I2C_M_RD) {
+			rx_nents += (blocks * 2) + 1;
+			tx_nents += 1;
+
+			while (qup->blk.pos < blocks) {
+				tlen = (i == (blocks - 1)) ? rem : limit;
+				tags = &qup->start_tag.start[off + len];
+				len += qup_i2c_set_tags(tags, qup, msg, 1);
+				qup->blk.data_len -= tlen;
+
+				/* scratch buf to read the start and len tags */
+				ret = qup_sg_set_buf(&qup->brx.sg[rx_buf++],
+						     &qup->brx.tag.start[0],
+						     2, qup, DMA_FROM_DEVICE);
+
+				if (ret)
+					return ret;
+
+				ret = qup_sg_set_buf(&qup->brx.sg[rx_buf++],
+						     &msg->buf[limit * i],
+						     tlen, qup,
+						     DMA_FROM_DEVICE);
+				if (ret)
+					return ret;
+
+				i++;
+				qup->blk.pos = i;
+			}
+			ret = qup_sg_set_buf(&qup->btx.sg[tx_buf++],
+					     &qup->start_tag.start[off],
+					     len, qup, DMA_TO_DEVICE);
+			if (ret)
+				return ret;
+
+			off += len;
+			/* scratch buf to read the BAM EOT and FLUSH tags */
+			ret = qup_sg_set_buf(&qup->brx.sg[rx_buf++],
+					     &qup->brx.tag.start[0],
+					     2, qup, DMA_FROM_DEVICE);
+			if (ret)
+				return ret;
+		} else {
+			tx_nents += (blocks * 2);
+
+			while (qup->blk.pos < blocks) {
+				tlen = (i == (blocks - 1)) ? rem : limit;
+				tags = &qup->start_tag.start[off + tx_len];
+				len = qup_i2c_set_tags(tags, qup, msg, 1);
+				qup->blk.data_len -= tlen;
+
+				ret = qup_sg_set_buf(&qup->btx.sg[tx_buf++],
+						     tags, len,
+						     qup, DMA_TO_DEVICE);
+				if (ret)
+					return ret;
+
+				tx_len += len;
+				ret = qup_sg_set_buf(&qup->btx.sg[tx_buf++],
+						     &msg->buf[limit * i],
+						     tlen, qup, DMA_TO_DEVICE);
+				if (ret)
+					return ret;
+				i++;
+				qup->blk.pos = i;
+			}
+			off += tx_len;
+
+			if (idx == (num - 1)) {
+				len = 1;
+				if (rx_nents) {
+					qup->btx.tag.start[0] =
+							QUP_BAM_INPUT_EOT;
+					len++;
+				}
+				qup->btx.tag.start[len - 1] =
+							QUP_BAM_FLUSH_STOP;
+				ret = qup_sg_set_buf(&qup->btx.sg[tx_buf++],
+						     &qup->btx.tag.start[0],
+						     len, qup, DMA_TO_DEVICE);
+				if (ret)
+					return ret;
+				tx_nents += 1;
+			}
+		}
+		idx++;
+		msg++;
+	}
+
+	txd = dmaengine_prep_slave_sg(qup->btx.dma, qup->btx.sg, tx_nents,
+				      DMA_MEM_TO_DEV,
+				      DMA_PREP_INTERRUPT | DMA_PREP_FENCE);
+	if (!txd) {
+		dev_err(qup->dev, "failed to get tx desc\n");
+		ret = -EINVAL;
+		goto desc_err;
+	}
+
+	if (!rx_nents) {
+		txd->callback = qup_i2c_bam_cb;
+		txd->callback_param = qup;
+	}
+
+	cookie_tx = dmaengine_submit(txd);
+	if (dma_submit_error(cookie_tx)) {
+		ret = -EINVAL;
+		goto desc_err;
+	}
+
+	dma_async_issue_pending(qup->btx.dma);
+
+	if (rx_nents) {
+		rxd = dmaengine_prep_slave_sg(qup->brx.dma, qup->brx.sg,
+					      rx_nents, DMA_DEV_TO_MEM,
+					      DMA_PREP_INTERRUPT);
+		if (!rxd) {
+			dev_err(qup->dev, "failed to get rx desc\n");
+			ret = -EINVAL;
+
+			/* abort TX descriptors */
+			dmaengine_terminate_all(qup->btx.dma);
+			goto desc_err;
+		}
+
+		rxd->callback = qup_i2c_bam_cb;
+		rxd->callback_param = qup;
+		cookie_rx = dmaengine_submit(rxd);
+		if (dma_submit_error(cookie_rx)) {
+			ret = -EINVAL;
+			goto desc_err;
+		}
+
+		dma_async_issue_pending(qup->brx.dma);
+	}
+
+	if (!wait_for_completion_timeout(&qup->xfer, TOUT_MAX * HZ)) {
+		dev_err(qup->dev, "normal trans timed out\n");
+		ret = -ETIMEDOUT;
+	}
+
+	if (ret || qup->bus_err || qup->qup_err) {
+		if (qup_i2c_change_state(qup, QUP_RUN_STATE)) {
+			dev_err(qup->dev, "change to run state timed out");
+			goto desc_err;
+		}
+
+		if (rx_nents)
+			writel(QUP_BAM_INPUT_EOT,
+			       qup->base + QUP_OUT_FIFO_BASE);
+
+		writel(QUP_BAM_FLUSH_STOP, qup->base + QUP_OUT_FIFO_BASE);
+
+		qup_i2c_flush(qup);
+
+		/* wait for remaining interrupts to occur */
+		if (!wait_for_completion_timeout(&qup->xfer, HZ))
+			dev_err(qup->dev, "flush timed out\n");
+
+		qup_i2c_rel_dma(qup);
+
+		ret =  (qup->bus_err & QUP_I2C_NACK_FLAG) ? -ENXIO : -EIO;
+	}
+
+desc_err:
+	dma_unmap_sg(qup->dev, qup->btx.sg, tx_nents, DMA_TO_DEVICE);
+
+	if (rx_nents)
+		dma_unmap_sg(qup->dev, qup->brx.sg, rx_nents,
+			     DMA_FROM_DEVICE);
+
+	return ret;
+}
+
+static int qup_i2c_bam_xfer(struct i2c_adapter *adap, struct i2c_msg *msg,
+			    int num)
+{
+	struct qup_i2c_dev *qup = i2c_get_adapdata(adap);
+	int ret = 0;
+
+	enable_irq(qup->irq);
+	ret = qup_i2c_req_dma(qup);
+
+	if (ret)
+		goto out;
+
+	writel(0, qup->base + QUP_MX_INPUT_CNT);
+	writel(0, qup->base + QUP_MX_OUTPUT_CNT);
+
+	/* set BAM mode */
+	writel(QUP_REPACK_EN | QUP_BAM_MODE, qup->base + QUP_IO_MODE);
+
+	/* mask fifo irqs */
+	writel((0x3 << 8), qup->base + QUP_OPERATIONAL_MASK);
+
+	/* set RUN STATE */
+	ret = qup_i2c_change_state(qup, QUP_RUN_STATE);
+	if (ret)
+		goto out;
+
+	writel(qup->clk_ctl, qup->base + QUP_I2C_CLK_CTL);
+
+	qup->msg = msg;
+	ret = qup_i2c_bam_do_xfer(qup, qup->msg, num);
+out:
+	disable_irq(qup->irq);
+
+	qup->msg = NULL;
 	return ret;
 }
 
@@ -563,12 +889,8 @@ static int qup_i2c_wait_for_complete(struct qup_i2c_dev *qup,
 		ret = -ETIMEDOUT;
 	}
 
-	if (qup->bus_err || qup->qup_err) {
-		if (qup->bus_err & QUP_I2C_NACK_FLAG) {
-			dev_dbg(qup->dev, "NACK from %x\n", msg->addr);
-			ret = -EIO;
-		}
-	}
+	if (qup->bus_err || qup->qup_err)
+		ret =  (qup->bus_err & QUP_I2C_NACK_FLAG) ? -ENXIO : -EIO;
 
 	return ret;
 }
@@ -576,6 +898,18 @@ static int qup_i2c_wait_for_complete(struct qup_i2c_dev *qup,
 static int qup_i2c_write_one_v2(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 {
 	int ret = 0;
+
+	qup->msg = msg;
+	qup->pos = 0;
+	enable_irq(qup->irq);
+	qup_i2c_set_blk_data(qup, msg);
+	qup_i2c_set_write_mode_v2(qup, msg);
+
+	ret = qup_i2c_change_state(qup, QUP_RUN_STATE);
+	if (ret)
+		goto err;
+
+	writel(qup->clk_ctl, qup->base + QUP_I2C_CLK_CTL);
 
 	do {
 		ret = qup_i2c_issue_xfer_v2(qup, msg);
@@ -589,43 +923,23 @@ static int qup_i2c_write_one_v2(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 		qup->blk.pos++;
 	} while (qup->blk.pos < qup->blk.count);
 
+	ret = qup_i2c_wait_ready(qup, QUP_OUT_NOT_EMPTY, RESET_BIT, ONE_BYTE);
+
 err:
-	return ret;
-}
-
-static int qup_i2c_write_one_v1(struct qup_i2c_dev *qup, struct i2c_msg *msg)
-{
-	int ret = 0;
-
-	do {
-		ret = qup_i2c_change_state(qup, QUP_PAUSE_STATE);
-		if (ret)
-			return ret;
-
-		ret = qup_i2c_issue_write(qup, msg);
-		if (ret)
-			return ret;
-
-		ret = qup_i2c_change_state(qup, QUP_RUN_STATE);
-		if (ret)
-			return ret;
-
-		ret = qup_i2c_wait_for_complete(qup, msg);
-		if (ret)
-			return ret;
-	} while (qup->pos < msg->len);
+	disable_irq(qup->irq);
+	qup->msg = NULL;
 
 	return ret;
 }
 
-static int qup_i2c_write(struct qup_i2c_dev *qup, struct i2c_msg *msg)
+static int qup_i2c_write_one(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 {
 	int ret;
 
 	qup->msg = msg;
 	qup->pos = 0;
+
 	enable_irq(qup->irq);
-	qup_i2c_get_blk_data(qup, msg);
 
 	qup_i2c_set_write_mode(qup, msg);
 
@@ -635,10 +949,25 @@ static int qup_i2c_write(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 
 	writel(qup->clk_ctl, qup->base + QUP_I2C_CLK_CTL);
 
-	ret = qup->qup_i2c_write_one(qup, msg);
-	if (ret)
-		goto err;
+	do {
+		ret = qup_i2c_change_state(qup, QUP_PAUSE_STATE);
+		if (ret)
+			goto err;
 
+		ret = qup_i2c_issue_write(qup, msg);
+		if (ret)
+			goto err;
+
+		ret = qup_i2c_change_state(qup, QUP_RUN_STATE);
+		if (ret)
+			goto err;
+
+		ret = qup_i2c_wait_for_complete(qup, msg);
+		if (ret)
+			goto err;
+	} while (qup->pos < msg->len);
+
+	/* Wait for the outstanding data in the fifo to drain */
 	ret = qup_i2c_wait_ready(qup, QUP_OUT_NOT_EMPTY, RESET_BIT, ONE_BYTE);
 err:
 	disable_irq(qup->irq);
@@ -649,22 +978,37 @@ err:
 
 static void qup_i2c_set_read_mode(struct qup_i2c_dev *qup, int len)
 {
+	if (len < qup->in_fifo_sz) {
+		/* FIFO mode */
+		writel(QUP_REPACK_EN, qup->base + QUP_IO_MODE);
+		writel(len, qup->base + QUP_MX_READ_CNT);
+	} else {
+		/* BLOCK mode (transfer data on chunks) */
+		writel(QUP_INPUT_BLK_MODE | QUP_REPACK_EN,
+		       qup->base + QUP_IO_MODE);
+		writel(len, qup->base + QUP_MX_INPUT_CNT);
+	}
+}
+
+static void qup_i2c_set_read_mode_v2(struct qup_i2c_dev *qup, int len)
+{
 	int tx_len = qup->blk.tx_tag_len;
 
 	len += qup->blk.rx_tag_len;
-	tx_len |= qup->blk.config_run;
+	len |= qup->config_run;
+	tx_len |= qup->config_run;
 
 	if (len < qup->in_fifo_sz) {
 		/* FIFO mode */
 		writel(QUP_REPACK_EN, qup->base + QUP_IO_MODE);
 		writel(tx_len, qup->base + QUP_MX_WRITE_CNT);
-		writel(len | qup->blk.config_run, qup->base + QUP_MX_READ_CNT);
+		writel(len, qup->base + QUP_MX_READ_CNT);
 	} else {
 		/* BLOCK mode (transfer data on chunks) */
 		writel(QUP_INPUT_BLK_MODE | QUP_REPACK_EN,
 		       qup->base + QUP_IO_MODE);
 		writel(tx_len, qup->base + QUP_MX_OUTPUT_CNT);
-		writel(len | qup->blk.config_run, qup->base + QUP_MX_INPUT_CNT);
+		writel(len, qup->base + QUP_MX_INPUT_CNT);
 	}
 }
 
@@ -672,7 +1016,7 @@ static void qup_i2c_issue_read(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 {
 	u32 addr, len, val;
 
-	addr = (msg->addr << 1) | 1;
+	addr = i2c_8bit_addr_from_msg(msg);
 
 	/* 0 is used to specify a length 256 (QUP_READ_LIMIT) */
 	len = (msg->len == QUP_READ_LIMIT) ? 0 : msg->len;
@@ -680,6 +1024,7 @@ static void qup_i2c_issue_read(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 	val = ((QUP_TAG_REC | len) << QUP_MSW_SHIFT) | QUP_TAG_START | addr;
 	writel(val, qup->base + QUP_OUT_FIFO_BASE);
 }
+
 
 static int qup_i2c_read_fifo(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 {
@@ -721,7 +1066,7 @@ static int qup_i2c_read_fifo_v2(struct qup_i2c_dev *qup,
 		ret = qup_i2c_wait_ready(qup, QUP_IN_NOT_EMPTY,
 					 SET_BIT, 4 * ONE_BYTE);
 		if (ret) {
-			dev_dbg(qup->dev, "timeout for fifo not empty");
+			dev_err(qup->dev, "timeout for fifo not empty");
 			return ret;
 		}
 		val = readl(qup->base + QUP_IN_FIFO_BASE);
@@ -748,6 +1093,18 @@ static int qup_i2c_read_one_v2(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 {
 	int ret = 0;
 
+	qup->msg = msg;
+	qup->pos  = 0;
+	enable_irq(qup->irq);
+	qup_i2c_set_blk_data(qup, msg);
+	qup_i2c_set_read_mode_v2(qup, msg->len);
+
+	ret = qup_i2c_change_state(qup, QUP_RUN_STATE);
+	if (ret)
+		goto err;
+
+	writel(qup->clk_ctl, qup->base + QUP_I2C_CLK_CTL);
+
 	do {
 		ret = qup_i2c_issue_xfer_v2(qup, msg);
 		if (ret)
@@ -765,47 +1122,13 @@ static int qup_i2c_read_one_v2(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 	} while (qup->blk.pos < qup->blk.count);
 
 err:
-	return ret;
-}
-
-static int qup_i2c_read_one_v1(struct qup_i2c_dev *qup, struct i2c_msg *msg)
-{
-	int ret = 0;
-
-	/*
-	 * The QUP block will issue a NACK and STOP on the bus when reaching
-	 * the end of the read, the length of the read is specified as one byte
-	 * which limits the possible read to 256 (QUP_READ_LIMIT) bytes.
-	 */
-	if (msg->len > QUP_READ_LIMIT) {
-		dev_err(qup->dev, "HW not capable of reads over %d bytes\n",
-			QUP_READ_LIMIT);
-		return -EINVAL;
-	}
-
-	ret = qup_i2c_change_state(qup, QUP_PAUSE_STATE);
-	if (ret)
-		return ret;
-
-	qup_i2c_issue_read(qup, msg);
-
-	ret = qup_i2c_change_state(qup, QUP_RUN_STATE);
-	if (ret)
-		return ret;
-
-	do {
-		ret = qup_i2c_wait_for_complete(qup, msg);
-		if (ret)
-			return ret;
-		ret = qup_i2c_read_fifo(qup, msg);
-		if (ret)
-			return ret;
-	} while (qup->pos < msg->len);
+	disable_irq(qup->irq);
+	qup->msg = NULL;
 
 	return ret;
 }
 
-static int qup_i2c_read(struct qup_i2c_dev *qup, struct i2c_msg *msg)
+static int qup_i2c_read_one(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 {
 	int ret;
 
@@ -813,8 +1136,6 @@ static int qup_i2c_read(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 	qup->pos  = 0;
 
 	enable_irq(qup->irq);
-	qup_i2c_get_blk_data(qup, msg);
-
 	qup_i2c_set_read_mode(qup, msg->len);
 
 	ret = qup_i2c_change_state(qup, QUP_RUN_STATE);
@@ -823,263 +1144,30 @@ static int qup_i2c_read(struct qup_i2c_dev *qup, struct i2c_msg *msg)
 
 	writel(qup->clk_ctl, qup->base + QUP_I2C_CLK_CTL);
 
-	ret = qup->qup_i2c_read_one(qup, msg);
+	ret = qup_i2c_change_state(qup, QUP_PAUSE_STATE);
+	if (ret)
+		goto err;
+
+	qup_i2c_issue_read(qup, msg);
+
+	ret = qup_i2c_change_state(qup, QUP_RUN_STATE);
+	if (ret)
+		goto err;
+
+	do {
+		ret = qup_i2c_wait_for_complete(qup, msg);
+		if (ret)
+			goto err;
+
+		ret = qup_i2c_read_fifo(qup, msg);
+		if (ret)
+			goto err;
+	} while (qup->pos < msg->len);
 
 err:
 	disable_irq(qup->irq);
 	qup->msg = NULL;
 
-	return ret;
-}
-
-static void qup_i2c_bam_cb(void *data)
-{
-	struct qup_i2c_dev *qup = data;
-
-	complete(&qup->xfer);
-}
-
-void qup_sg_set_buf(struct scatterlist *sg, void *buf, struct qup_i2c_tag *tg,
-		    unsigned int buflen, struct qup_i2c_dev *qup,
-		    int map, int dir)
-{
-	sg_set_buf(sg, buf, buflen);
-	dma_map_sg(qup->dev, sg, 1, dir);
-
-	if (!map)
-		sg_dma_address(sg) = tg->addr + ((u8 *)buf - tg->start);
-}
-
-static void qup_i2c_rel_dma(struct qup_i2c_dev *qup)
-{
-	if (qup->btx.dma_tx)
-		dma_release_channel(qup->btx.dma_tx);
-	if (qup->brx.dma_rx)
-		dma_release_channel(qup->brx.dma_rx);
-	qup->btx.dma_tx = NULL;
-	qup->brx.dma_rx = NULL;
-}
-
-static int qup_i2c_req_dma(struct qup_i2c_dev *qup)
-{
-	if (!qup->btx.dma_tx) {
-		qup->btx.dma_tx = dma_request_slave_channel(qup->dev, "tx");
-		if (!qup->btx.dma_tx) {
-			dev_err(qup->dev, "\n tx channel not available");
-			return -ENODEV;
-		}
-	}
-
-	if (!qup->brx.dma_rx) {
-		qup->brx.dma_rx = dma_request_slave_channel(qup->dev, "rx");
-		if (!qup->brx.dma_rx) {
-			dev_err(qup->dev, "\n rx channel not available");
-			qup_i2c_rel_dma(qup);
-			return -ENODEV;
-		}
-	}
-	return 0;
-}
-
-static int bam_do_xfer(struct qup_i2c_dev *qup, struct i2c_msg *msg)
-{
-	struct dma_async_tx_descriptor *txd, *rxd = NULL;
-	int ret = 0;
-	dma_cookie_t cookie_rx, cookie_tx;
-	u32 rx_nents = 0, tx_nents = 0, len, blocks, rem;
-	u32 i, tlen, tx_len, tx_buf = 0, rx_buf = 0, off = 0;
-	u8 *tags;
-
-	while (qup->cmsg < qup->num) {
-		blocks = (msg->len + QUP_READ_LIMIT) / QUP_READ_LIMIT;
-		rem = msg->len % QUP_READ_LIMIT;
-		tx_len = 0, len = 0, i = 0;
-
-		qup_i2c_get_blk_data(qup, msg);
-
-		if (msg->flags & I2C_M_RD) {
-			rx_nents += (blocks * 2) + 1;
-			tx_nents += 1;
-
-			while (qup->blk.pos < blocks) {
-				/* length set to '0' implies 256 bytes */
-				tlen = (i == (blocks - 1)) ? rem : 0;
-				tags = &qup->start_tag.start[off + len];
-				len += qup_i2c_get_tags(tags, qup, msg, 1);
-
-				/* scratch buf to read the start and len tags */
-				qup_sg_set_buf(&qup->brx.sg_rx[rx_buf++],
-					       &qup->brx.scratch_tag.start[0],
-					       &qup->brx.scratch_tag,
-					       2, qup, 0, 0);
-
-				qup_sg_set_buf(&qup->brx.sg_rx[rx_buf++],
-					       &msg->buf[QUP_READ_LIMIT * i],
-					       NULL, tlen, qup,
-					       1, DMA_FROM_DEVICE);
-				i++;
-				qup->blk.pos = i;
-			}
-			qup_sg_set_buf(&qup->btx.sg_tx[tx_buf++],
-				       &qup->start_tag.start[off],
-				       &qup->start_tag, len, qup, 0, 0);
-			off += len;
-			/* scratch buf to read the BAM EOT and FLUSH tags */
-			qup_sg_set_buf(&qup->brx.sg_rx[rx_buf++],
-				       &qup->brx.scratch_tag.start[0],
-				       &qup->brx.scratch_tag, 2,
-				       qup, 0, 0);
-		} else {
-			tx_nents += (blocks * 2);
-
-			while (qup->blk.pos < blocks) {
-				tlen = (i == (blocks - 1)) ? rem : 0;
-				tags = &qup->start_tag.start[off + tx_len];
-				len = qup_i2c_get_tags(tags, qup, msg, 1);
-
-				qup_sg_set_buf(&qup->btx.sg_tx[tx_buf++],
-					       tags,
-					       &qup->start_tag, len,
-					       qup, 0, 0);
-
-				tx_len += len;
-				qup_sg_set_buf(&qup->btx.sg_tx[tx_buf++],
-					       &msg->buf[QUP_READ_LIMIT * i],
-					       NULL, tlen, qup, 1,
-					       DMA_TO_DEVICE);
-				i++;
-				qup->blk.pos = i;
-			}
-			off += tx_len;
-
-			if (qup->cmsg == (qup->num - 1)) {
-				qup->btx.footer_tag.start[0] =
-							  QUP_BAM_FLUSH_STOP;
-				qup->btx.footer_tag.start[1] =
-							  QUP_BAM_FLUSH_STOP;
-				qup_sg_set_buf(&qup->btx.sg_tx[tx_buf++],
-					       &qup->btx.footer_tag.start[0],
-					       &qup->btx.footer_tag, 2,
-					       qup, 0, 0);
-				tx_nents += 1;
-			}
-		}
-		qup->cmsg++;
-		msg++;
-	}
-
-	txd = dmaengine_prep_slave_sg(qup->btx.dma_tx, qup->btx.sg_tx, tx_nents,
-				      DMA_MEM_TO_DEV,
-				      DMA_PREP_INTERRUPT | DMA_PREP_FENCE);
-	if (!txd) {
-		dev_err(qup->dev, "failed to get tx desc\n");
-		ret = -EINVAL;
-		goto desc_err;
-	}
-
-	if (!rx_nents) {
-		txd->callback = qup_i2c_bam_cb;
-		txd->callback_param = qup;
-	}
-
-	cookie_tx = dmaengine_submit(txd);
-	dma_async_issue_pending(qup->btx.dma_tx);
-
-	if (rx_nents) {
-		rxd = dmaengine_prep_slave_sg(qup->brx.dma_rx, qup->brx.sg_rx,
-					      rx_nents, DMA_DEV_TO_MEM,
-					      DMA_PREP_INTERRUPT);
-		if (!rxd) {
-			dev_err(qup->dev, "failed to get rx desc\n");
-			ret = -EINVAL;
-
-			/* abort TX descriptors */
-			dmaengine_terminate_all(qup->btx.dma_tx);
-			goto desc_err;
-		}
-
-		rxd->callback = qup_i2c_bam_cb;
-		rxd->callback_param = qup;
-		cookie_rx = dmaengine_submit(rxd);
-		dma_async_issue_pending(qup->brx.dma_rx);
-	}
-
-	if (!wait_for_completion_timeout(&qup->xfer, TOUT_MAX * HZ)) {
-		dev_err(qup->dev, "normal trans timed out\n");
-		ret = -ETIMEDOUT;
-	}
-
-	if (ret || qup->bus_err || qup->qup_err) {
-		if (qup->bus_err & QUP_I2C_NACK_FLAG) {
-			msg--;
-			dev_dbg(qup->dev, "NACK from %x\n", msg->addr);
-			ret = -EIO;
-
-			if (qup_i2c_change_state(qup, QUP_RUN_STATE)) {
-				dev_err(qup->dev, "change to run state timed out");
-				return ret;
-			}
-
-			if (rx_nents)
-				writel(QUP_BAM_INPUT_EOT,
-				       qup->base + QUP_OUT_FIFO_BASE);
-
-			writel(QUP_BAM_FLUSH_STOP,
-			       qup->base + QUP_OUT_FIFO_BASE);
-
-			qup_i2c_flush(qup);
-
-			/* wait for remaining interrupts to occur */
-			if (!wait_for_completion_timeout(&qup->xfer, HZ))
-				dev_err(qup->dev, "flush timed out\n");
-
-			qup_i2c_rel_dma(qup);
-		}
-	}
-
-	dma_unmap_sg(qup->dev, qup->btx.sg_tx, tx_nents, DMA_TO_DEVICE);
-
-	if (rx_nents)
-		dma_unmap_sg(qup->dev, qup->brx.sg_rx, rx_nents,
-			     DMA_FROM_DEVICE);
-desc_err:
-	return ret;
-}
-
-static int qup_bam_xfer(struct i2c_adapter *adap, struct i2c_msg *msg)
-{
-	struct qup_i2c_dev *qup = i2c_get_adapdata(adap);
-	int ret = 0;
-
-	enable_irq(qup->irq);
-	if (qup_i2c_req_dma(qup))
-		goto out;
-
-	qup->bus_err = 0;
-	qup->qup_err = 0;
-
-	writel(0, qup->base + QUP_MX_INPUT_CNT);
-	writel(0, qup->base + QUP_MX_OUTPUT_CNT);
-
-	/* set BAM mode */
-	writel(QUP_REPACK_EN | QUP_BAM_MODE, qup->base + QUP_IO_MODE);
-
-	/* mask fifo irqs */
-	writel((0x3 << 8), qup->base + QUP_OPERATIONAL_MASK);
-
-	/* set RUN STATE */
-	ret = qup_i2c_change_state(qup, QUP_RUN_STATE);
-	if (ret)
-		goto out;
-
-	writel(qup->clk_ctl, qup->base + QUP_I2C_CLK_CTL);
-
-	qup->msg = msg;
-	ret = bam_do_xfer(qup, qup->msg);
-out:
-	disable_irq(qup->irq);
-
-	qup->msg = NULL;
 	return ret;
 }
 
@@ -1090,11 +1178,12 @@ static int qup_i2c_xfer(struct i2c_adapter *adap,
 	struct qup_i2c_dev *qup = i2c_get_adapdata(adap);
 	int ret, idx;
 
-	qup->num = 1;
-
 	ret = pm_runtime_get_sync(qup->dev);
 	if (ret < 0)
 		goto out;
+
+	qup->bus_err = 0;
+	qup->qup_err = 0;
 
 	writel(1, qup->base + QUP_SW_RESET);
 	ret = qup_i2c_poll_state(qup, QUP_RESET_STATE);
@@ -1116,9 +1205,9 @@ static int qup_i2c_xfer(struct i2c_adapter *adap,
 		}
 
 		if (msgs[idx].flags & I2C_M_RD)
-			ret = qup_i2c_read(qup, &msgs[idx]);
+			ret = qup_i2c_read_one(qup, &msgs[idx]);
 		else
-			ret = qup_i2c_write(qup, &msgs[idx]);
+			ret = qup_i2c_write_one(qup, &msgs[idx]);
 
 		if (ret)
 			break;
@@ -1143,10 +1232,10 @@ static int qup_i2c_xfer_v2(struct i2c_adapter *adap,
 			   int num)
 {
 	struct qup_i2c_dev *qup = i2c_get_adapdata(adap);
-	int ret, idx, len, use_dma  = 0;
+	int ret, len, idx = 0, use_dma = 0;
 
-	qup->num = num;
-	qup->cmsg = 0;
+	qup->bus_err = 0;
+	qup->qup_err = 0;
 
 	ret = pm_runtime_get_sync(qup->dev);
 	if (ret < 0)
@@ -1181,31 +1270,36 @@ static int qup_i2c_xfer_v2(struct i2c_adapter *adap,
 		}
 	}
 
-	for (idx = 0; idx < num; idx++) {
+	idx = 0;
+
+	do {
+		if (msgs[idx].len == 0) {
+			ret = -EINVAL;
+			goto out;
+		}
+
 		if (qup_i2c_poll_state_i2c_master(qup)) {
 			ret = -EIO;
 			goto out;
 		}
 
+		qup->is_last = (idx == (num - 1));
+		if (idx)
+			qup->config_run = QUP_I2C_MX_CONFIG_DURING_RUN;
+		else
+			qup->config_run = 0;
+
 		reinit_completion(&qup->xfer);
 
-		len = msgs[idx].len;
-
 		if (use_dma) {
-			ret = qup_bam_xfer(adap, &msgs[idx]);
-			idx = num;
+			ret = qup_i2c_bam_xfer(adap, &msgs[idx], num);
 		} else {
 			if (msgs[idx].flags & I2C_M_RD)
-				ret = qup_i2c_read(qup, &msgs[idx]);
+				ret = qup_i2c_read_one_v2(qup, &msgs[idx]);
 			else
-				ret = qup_i2c_write(qup, &msgs[idx]);
+				ret = qup_i2c_write_one_v2(qup, &msgs[idx]);
 		}
-
-		if (ret)
-			break;
-
-		qup->cmsg++;
-	}
+	} while ((idx++ < (num - 1)) && !use_dma && !ret);
 
 	if (!ret)
 		ret = qup_i2c_change_state(qup, QUP_RESET_STATE);
@@ -1229,6 +1323,11 @@ static const struct i2c_algorithm qup_i2c_algo = {
 	.functionality	= qup_i2c_func,
 };
 
+static const struct i2c_algorithm qup_i2c_algo_v2 = {
+	.master_xfer	= qup_i2c_xfer_v2,
+	.functionality	= qup_i2c_func,
+};
+
 /*
  * The QUP block will issue a NACK and STOP on the bus when reaching
  * the end of the read, the length of the read is specified as one byte
@@ -1236,11 +1335,6 @@ static const struct i2c_algorithm qup_i2c_algo = {
  */
 static struct i2c_adapter_quirks qup_i2c_quirks = {
 	.max_read_len = QUP_READ_LIMIT,
-};
-
-static const struct i2c_algorithm qup_i2c_algo_v2 = {
-	.master_xfer	= qup_i2c_xfer_v2,
-	.functionality	= qup_i2c_func,
 };
 
 static void qup_i2c_enable_clocks(struct qup_i2c_dev *qup)
@@ -1286,64 +1380,57 @@ static int qup_i2c_probe(struct platform_device *pdev)
 
 	if (of_device_is_compatible(pdev->dev.of_node, "qcom,i2c-qup-v1.1.1")) {
 		qup->adap.algo = &qup_i2c_algo;
-		qup->qup_i2c_write_one = qup_i2c_write_one_v1;
-		qup->qup_i2c_read_one = qup_i2c_read_one_v1;
+		qup->adap.quirks = &qup_i2c_quirks;
 	} else {
 		qup->adap.algo = &qup_i2c_algo_v2;
-		qup->qup_i2c_write_one = qup_i2c_write_one_v2;
-		qup->qup_i2c_read_one = qup_i2c_read_one_v2;
-		qup->use_v2_tags = 1;
+		ret = qup_i2c_req_dma(qup);
 
-		if (qup_i2c_req_dma(qup))
+		if (ret == -EPROBE_DEFER)
+			goto fail_dma;
+		else if (ret != 0)
 			goto nodma;
 
 		blocks = (MX_BLOCKS << 1) + 1;
-		qup->btx.sg_tx = devm_kzalloc(&pdev->dev,
-					      sizeof(*qup->btx.sg_tx) * blocks,
-					      GFP_KERNEL);
-		if (!qup->btx.sg_tx) {
+		qup->btx.sg = devm_kzalloc(&pdev->dev,
+					   sizeof(*qup->btx.sg) * blocks,
+					   GFP_KERNEL);
+		if (!qup->btx.sg) {
 			ret = -ENOMEM;
-			goto fail;
+			goto fail_dma;
 		}
-		sg_init_table(qup->btx.sg_tx, blocks);
+		sg_init_table(qup->btx.sg, blocks);
 
-		qup->brx.sg_rx = devm_kzalloc(&pdev->dev,
-					      sizeof(*qup->btx.sg_tx) * blocks,
-					      GFP_KERNEL);
-		if (!qup->brx.sg_rx) {
+		qup->brx.sg = devm_kzalloc(&pdev->dev,
+					   sizeof(*qup->brx.sg) * blocks,
+					   GFP_KERNEL);
+		if (!qup->brx.sg) {
 			ret = -ENOMEM;
-			goto fail;
+			goto fail_dma;
 		}
-		sg_init_table(qup->brx.sg_rx, blocks);
+		sg_init_table(qup->brx.sg, blocks);
 
 		/* 2 tag bytes for each block + 5 for start, stop tags */
 		size = blocks * 2 + 5;
-		qup->dpool = dma_pool_create("qup_i2c-dma-pool", &pdev->dev,
-					     size, 4, 0);
 
-		qup->start_tag.start = dma_pool_alloc(qup->dpool, GFP_KERNEL,
-						      &qup->start_tag.addr);
+		qup->start_tag.start = devm_kzalloc(&pdev->dev,
+						    size, GFP_KERNEL);
 		if (!qup->start_tag.start) {
 			ret = -ENOMEM;
-			goto fail;
+			goto fail_dma;
 		}
 
-		qup->brx.scratch_tag.start = dma_pool_alloc(qup->dpool,
-							    GFP_KERNEL,
-						&qup->brx.scratch_tag.addr);
-		if (!qup->brx.scratch_tag.start) {
+		qup->brx.tag.start = devm_kzalloc(&pdev->dev, 2, GFP_KERNEL);
+		if (!qup->brx.tag.start) {
 			ret = -ENOMEM;
-			goto fail;
+			goto fail_dma;
 		}
 
-		qup->btx.footer_tag.start = dma_pool_alloc(qup->dpool,
-							   GFP_KERNEL,
-						&qup->btx.footer_tag.addr);
-		if (!qup->btx.footer_tag.start) {
+		qup->btx.tag.start = devm_kzalloc(&pdev->dev, 2, GFP_KERNEL);
+		if (!qup->btx.tag.start) {
 			ret = -ENOMEM;
-			goto fail;
+			goto fail_dma;
 		}
-		qup->is_dma = 1;
+		qup->is_dma = true;
 	}
 
 nodma:
@@ -1442,9 +1529,10 @@ nodma:
 		qup->out_blk_sz, qup->out_fifo_sz);
 
 	i2c_set_adapdata(&qup->adap, qup);
-	qup->adap.quirks = &qup_i2c_quirks;
 	qup->adap.dev.parent = qup->dev;
 	qup->adap.dev.of_node = pdev->dev.of_node;
+	qup->is_last = true;
+
 	strlcpy(qup->adap.name, "QUP I2C adapter", sizeof(qup->adap.name));
 
 	pm_runtime_set_autosuspend_delay(qup->dev, MSEC_PER_SEC);
@@ -1462,12 +1550,12 @@ fail_runtime:
 	pm_runtime_disable(qup->dev);
 	pm_runtime_set_suspended(qup->dev);
 fail:
-	if (qup->btx.dma_tx)
-		dma_release_channel(qup->btx.dma_tx);
-	if (qup->brx.dma_rx)
-		dma_release_channel(qup->brx.dma_rx);
-
 	qup_i2c_disable_clocks(qup);
+fail_dma:
+	if (qup->btx.dma)
+		dma_release_channel(qup->btx.dma);
+	if (qup->brx.dma)
+		dma_release_channel(qup->brx.dma);
 	return ret;
 }
 
@@ -1476,15 +1564,8 @@ static int qup_i2c_remove(struct platform_device *pdev)
 	struct qup_i2c_dev *qup = platform_get_drvdata(pdev);
 
 	if (qup->is_dma) {
-		dma_pool_free(qup->dpool, qup->start_tag.start,
-			      qup->start_tag.addr);
-		dma_pool_free(qup->dpool, qup->brx.scratch_tag.start,
-			      qup->brx.scratch_tag.addr);
-		dma_pool_free(qup->dpool, qup->btx.footer_tag.start,
-			      qup->btx.footer_tag.addr);
-		dma_pool_destroy(qup->dpool);
-		dma_release_channel(qup->btx.dma_tx);
-		dma_release_channel(qup->brx.dma_rx);
+		dma_release_channel(qup->btx.dma);
+		dma_release_channel(qup->brx.dma);
 	}
 
 	disable_irq(qup->irq);

@@ -17,9 +17,10 @@
 #include <linux/rpmsg.h>
 #include <linux/soc/qcom/wcnss_ctrl.h>
 #include <linux/platform_device.h>
+
 #include <net/bluetooth/bluetooth.h>
 #include <net/bluetooth/hci_core.h>
-#include <net/bluetooth/hci.h>
+
 #include "btqca.h"
 
 struct btqcomsmd {
@@ -41,7 +42,7 @@ static int btqcomsmd_recv(struct hci_dev *hdev, unsigned int type,
 		return -ENOMEM;
 	}
 
-	bt_cb(skb)->pkt_type = type;
+	hci_skb_pkt_type(skb) = type;
 	memcpy(skb_put(skb, count), data, count);
 
 	return hci_recv_frame(hdev, skb);
@@ -69,7 +70,7 @@ static int btqcomsmd_send(struct hci_dev *hdev, struct sk_buff *skb)
 	struct btqcomsmd *btq = hci_get_drvdata(hdev);
 	int ret;
 
-	switch (bt_cb(skb)->pkt_type) {
+	switch (hci_skb_pkt_type(skb)) {
 	case HCI_ACLDATA_PKT:
 		ret = rpmsg_send(btq->acl_channel, skb->data, skb->len);
 		hdev->stat.acl_tx++;

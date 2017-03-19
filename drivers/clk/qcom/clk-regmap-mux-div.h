@@ -16,8 +16,8 @@
 #define __QCOM_CLK_REGMAP_MUX_DIV_H__
 
 #include <linux/clk-provider.h>
-#include "clk-regmap.h"
 #include "clk-rcg.h"
+#include "clk-regmap.h"
 
 /**
  * struct mux_div_clk - combined mux/divider clock
@@ -27,18 +27,10 @@
  * @src_width:	number of bits in source select
  * @src_shift:	lowest bit of source select field
  * @div:	the divider raw configuration value
- * @src_sel:	the mux index which will be used if the clock is enabled
- * @safe_src:	the safe source mux index for this clock
- * @safe_freq:	When switching rates from A to B, the mux div clock will
- *		instead switch from A -> safe_freq -> B. This allows the
- *		mux_div clock to change rates while enabled, even if this
- *		behavior is not supported by the parent clocks.
- *		If changing the rate of parent A also causes the rate of
- *		parent B to change, then safe_freq must be defined.
- *		safe_freq is expected to have a source clock which is always
- *		on and runs at only one rate.
+ * @src:	the mux index which will be used if the clock is enabled
  * @parent_map:	pointer to parent_map struct
  * @clkr:	handle between common and hardware-specific interfaces
+ * @clk_nb:	clock notifier registered for clock rate changes of the A53 PLL
  */
 
 struct clk_regmap_mux_div {
@@ -48,16 +40,13 @@ struct clk_regmap_mux_div {
 	u32				src_width;
 	u32				src_shift;
 	u32				div;
-	u32				src_sel;
-	u32				safe_src;
-	unsigned long			safe_freq;
+	u32				src;
 	const struct parent_map		*parent_map;
 	struct clk_regmap		clkr;
+	struct notifier_block		clk_nb;
 };
 
-#define to_clk_regmap_mux_div(_hw) \
-	container_of(to_clk_regmap(_hw), struct clk_regmap_mux_div, clkr)
-
 extern const struct clk_ops clk_regmap_mux_div_ops;
+int __mux_div_set_src_div(struct clk_regmap_mux_div *md, u32 src, u32 div);
 
 #endif

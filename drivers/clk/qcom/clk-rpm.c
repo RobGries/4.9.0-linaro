@@ -127,8 +127,8 @@ struct clk_rpm {
 
 struct rpm_cc {
 	struct qcom_rpm *rpm;
-	struct clk_onecell_data data;
-	struct clk *clks[];
+	struct clk_rpm **clks;
+	size_t num_clks;
 };
 
 struct rpm_clk_desc {
@@ -349,8 +349,6 @@ static const struct clk_ops clk_rpm_branch_ops = {
 };
 
 /* apq8064 */
-DEFINE_CLK_RPM_PXO_BRANCH(apq8064, pxo, pxo_a_clk, QCOM_RPM_PXO_CLK, 27000000);
-DEFINE_CLK_RPM_CXO_BRANCH(apq8064, cxo, cxo_a_clk, QCOM_RPM_CXO_CLK, 19200000);
 DEFINE_CLK_RPM(apq8064, afab_clk, afab_a_clk, QCOM_RPM_APPS_FABRIC_CLK);
 DEFINE_CLK_RPM(apq8064, cfpb_clk, cfpb_a_clk, QCOM_RPM_CFPB_CLK);
 DEFINE_CLK_RPM(apq8064, daytona_clk, daytona_a_clk, QCOM_RPM_DAYTONA_FABRIC_CLK);
@@ -362,10 +360,6 @@ DEFINE_CLK_RPM(apq8064, sfpb_clk, sfpb_a_clk, QCOM_RPM_SFPB_CLK);
 DEFINE_CLK_RPM(apq8064, qdss_clk, qdss_a_clk, QCOM_RPM_QDSS_CLK);
 
 static struct clk_rpm *apq8064_clks[] = {
-	[RPM_PXO_CLK] = &apq8064_pxo,
-	[RPM_PXO_A_CLK] = &apq8064_pxo_a_clk,
-	[RPM_CXO_CLK] = &apq8064_cxo,
-	[RPM_CXO_A_CLK] = &apq8064_cxo_a_clk,
 	[RPM_APPS_FABRIC_CLK] = &apq8064_afab_clk,
 	[RPM_APPS_FABRIC_A_CLK] = &apq8064_afab_a_clk,
 	[RPM_CFPB_CLK] = &apq8064_cfpb_clk,
@@ -392,17 +386,28 @@ static const struct rpm_clk_desc rpm_clk_apq8064 = {
 };
 
 static const struct of_device_id rpm_clk_match_table[] = {
-	{ .compatible = "qcom,rpmcc-apq8064", .data = &rpm_clk_apq8064},
+	{ .compatible = "qcom,rpmcc-apq8064", .data = &rpm_clk_apq8064 },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, rpm_clk_match_table);
 
+static struct clk_hw *qcom_rpm_clk_hw_get(struct of_phandle_args *clkspec,
+					  void *data)
+{
+	struct rpm_cc *rcc = data;
+	unsigned int idx = clkspec->args[0];
+
+	if (idx >= rcc->num_clks) {
+		pr_err("%s: invalid index %u\n", __func__, idx);
+		return ERR_PTR(-EINVAL);
+	}
+
+	return rcc->clks[idx] ? &rcc->clks[idx]->hw : ERR_PTR(-ENOENT);
+}
+
 static int rpm_clk_probe(struct platform_device *pdev)
 {
-	struct clk **clks;
-	struct clk *clk;
 	struct rpm_cc *rcc;
-	struct clk_onecell_data *data;
 	int ret;
 	size_t num_clks, i;
 	struct qcom_rpm *rpm;
@@ -422,21 +427,16 @@ static int rpm_clk_probe(struct platform_device *pdev)
 	rpm_clks = desc->clks;
 	num_clks = desc->num_clks;
 
-	rcc = devm_kzalloc(&pdev->dev, sizeof(*rcc) + sizeof(*clks) * num_clks,
-			   GFP_KERNEL);
+	rcc = devm_kzalloc(&pdev->dev, sizeof(*rcc), GFP_KERNEL);
 	if (!rcc)
 		return -ENOMEM;
 
-	clks = rcc->clks;
-	data = &rcc->data;
-	data->clks = clks;
-	data->clk_num = num_clks;
+	rcc->clks = rpm_clks;
+	rcc->num_clks = num_clks;
 
 	for (i = 0; i < num_clks; i++) {
-		if (!rpm_clks[i]) {
-			clks[i] = ERR_PTR(-ENOENT);
+		if (!rpm_clks[i])
 			continue;
-		}
 
 		rpm_clks[i]->rpm = rpm;
 
@@ -446,22 +446,16 @@ static int rpm_clk_probe(struct platform_device *pdev)
 	}
 
 	for (i = 0; i < num_clks; i++) {
-		if (!rpm_clks[i]) {
-			clks[i] = ERR_PTR(-ENOENT);
+		if (!rpm_clks[i])
 			continue;
-		}
 
-		clk = devm_clk_register(&pdev->dev, &rpm_clks[i]->hw);
-		if (IS_ERR(clk)) {
-			ret = PTR_ERR(clk);
+		ret = devm_clk_hw_register(&pdev->dev, &rpm_clks[i]->hw);
+		if (ret)
 			goto err;
-		}
-
-		clks[i] = clk;
 	}
 
-	ret = of_clk_add_provider(pdev->dev.of_node, of_clk_src_onecell_get,
-				  data);
+	ret = of_clk_add_hw_provider(pdev->dev.of_node, qcom_rpm_clk_hw_get,
+				     rcc);
 	if (ret)
 		goto err;
 

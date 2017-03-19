@@ -462,6 +462,18 @@ static struct clk_rcg2 mdp_clk_src = {
 	},
 };
 
+static struct clk_rcg2 gfx3d_clk_src = {
+	.cmd_rcgr = 0x4000,
+	.hid_width = 5,
+	.parent_map = mmcc_xo_mmpll0_1_2_gpll0_map,
+	.clkr.hw.init = &(struct clk_init_data){
+		.name = "gfx3d_clk_src",
+		.parent_names = mmcc_xo_mmpll0_1_2_gpll0,
+		.num_parents = 5,
+		.ops = &clk_rcg2_ops,
+	},
+};
+
 static struct freq_tbl ftbl_camss_jpeg_jpeg0_2_clk[] = {
 	F(75000000, P_GPLL0, 8, 0, 0),
 	F(133330000, P_GPLL0, 4.5, 0, 0),
@@ -2388,6 +2400,7 @@ static struct gdsc oxilicx_gdsc = {
 	.pd = {
 		.name = "oxilicx",
 	},
+	.parent = &oxili_gdsc.pd,
 	.pwrsts = PWRSTS_OFF_ON,
 };
 
@@ -2408,6 +2421,7 @@ static struct clk_regmap *mmcc_msm8974_clocks[] = {
 	[VFE0_CLK_SRC] = &vfe0_clk_src.clkr,
 	[VFE1_CLK_SRC] = &vfe1_clk_src.clkr,
 	[MDP_CLK_SRC] = &mdp_clk_src.clkr,
+	[GFX3D_CLK_SRC] = &gfx3d_clk_src.clkr,
 	[JPEG0_CLK_SRC] = &jpeg0_clk_src.clkr,
 	[JPEG1_CLK_SRC] = &jpeg1_clk_src.clkr,
 	[JPEG2_CLK_SRC] = &jpeg2_clk_src.clkr,
@@ -2602,7 +2616,15 @@ MODULE_DEVICE_TABLE(of, mmcc_msm8974_match_table);
 static int mmcc_msm8974_probe(struct platform_device *pdev)
 {
 	struct regmap *regmap;
-	int ret;
+	struct device_node *node;
+
+	node = of_find_compatible_node(NULL, NULL, "qcom,rpmcc-msm8974");
+
+	if (IS_ENABLED(CONFIG_QCOM_CLK_SMD_RPM) &&
+	    of_device_is_available(node)) {
+		/* skip registration for gfx3d, as it is controlled by RPMCC */
+		mmcc_msm8974_desc.clks[GFX3D_CLK_SRC] = NULL;
+	}
 
 	regmap = qcom_cc_map(pdev, &mmcc_msm8974_desc);
 	if (IS_ERR(regmap))
@@ -2611,22 +2633,11 @@ static int mmcc_msm8974_probe(struct platform_device *pdev)
 	clk_pll_configure_sr_hpm_lp(&mmpll1, regmap, &mmpll1_config, true);
 	clk_pll_configure_sr_hpm_lp(&mmpll3, regmap, &mmpll3_config, false);
 
-	ret = qcom_cc_really_probe(pdev, &mmcc_msm8974_desc, regmap);
-	if (ret)
-		return ret;
-
-	return pm_genpd_add_subdomain(&oxili_gdsc.pd, &oxilicx_gdsc.pd);
-}
-
-static int mmcc_msm8974_remove(struct platform_device *pdev)
-{
-	pm_genpd_remove_subdomain(&oxili_gdsc.pd, &oxilicx_gdsc.pd);
-	return 0;
+	return qcom_cc_really_probe(pdev, &mmcc_msm8974_desc, regmap);
 }
 
 static struct platform_driver mmcc_msm8974_driver = {
 	.probe		= mmcc_msm8974_probe,
-	.remove		= mmcc_msm8974_remove,
 	.driver		= {
 		.name	= "mmcc-msm8974",
 		.of_match_table = mmcc_msm8974_match_table,
