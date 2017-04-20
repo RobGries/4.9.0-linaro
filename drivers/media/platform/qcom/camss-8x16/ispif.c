@@ -55,8 +55,13 @@
 #define ISPIF_VFE_m_IRQ_MASK_2_RDI2_ENABLE	0x00001249
 #define ISPIF_VFE_m_IRQ_MASK_2_RDI2_MASK	0x00001fff
 #define ISPIF_VFE_m_IRQ_STATUS_0(m)	(0x21c + 0x200 * (m))
+#define ISPIF_VFE_m_IRQ_STATUS_0_PIX0_OVERFLOW	(1 << 12)
+#define ISPIF_VFE_m_IRQ_STATUS_0_RDI0_OVERFLOW	(1 << 25)
 #define ISPIF_VFE_m_IRQ_STATUS_1(m)	(0x220 + 0x200 * (m))
+#define ISPIF_VFE_m_IRQ_STATUS_1_PIX1_OVERFLOW	(1 << 12)
+#define ISPIF_VFE_m_IRQ_STATUS_1_RDI1_OVERFLOW	(1 << 25)
 #define ISPIF_VFE_m_IRQ_STATUS_2(m)	(0x224 + 0x200 * (m))
+#define ISPIF_VFE_m_IRQ_STATUS_2_RDI2_OVERFLOW	(1 << 12)
 #define ISPIF_VFE_m_IRQ_CLEAR_0(m)	(0x230 + 0x200 * (m))
 #define ISPIF_VFE_m_IRQ_CLEAR_1(m)	(0x234 + 0x200 * (m))
 #define ISPIF_VFE_m_IRQ_CLEAR_2(m)	(0x238 + 0x200 * (m))
@@ -130,6 +135,21 @@ static irqreturn_t ispif_isr(int irq, void *dev)
 
 	if ((value0 >> 27) & 0x1)
 		complete(&ispif->reset_complete);
+
+	if (unlikely(value0 & ISPIF_VFE_m_IRQ_STATUS_0_PIX0_OVERFLOW))
+		dev_err_ratelimited(to_device(ispif), "VFE0 pix0 overflow\n");
+
+	if (unlikely(value0 & ISPIF_VFE_m_IRQ_STATUS_0_RDI0_OVERFLOW))
+		dev_err_ratelimited(to_device(ispif), "VFE0 rdi0 overflow\n");
+
+	if (unlikely(value1 & ISPIF_VFE_m_IRQ_STATUS_1_PIX1_OVERFLOW))
+		dev_err_ratelimited(to_device(ispif), "VFE0 pix1 overflow\n");
+
+	if (unlikely(value1 & ISPIF_VFE_m_IRQ_STATUS_1_RDI1_OVERFLOW))
+		dev_err_ratelimited(to_device(ispif), "VFE0 rdi1 overflow\n");
+
+	if (unlikely(value2 & ISPIF_VFE_m_IRQ_STATUS_2_RDI2_OVERFLOW))
+		dev_err_ratelimited(to_device(ispif), "VFE0 rdi2 overflow\n");
 
 	return IRQ_HANDLED;
 }
@@ -879,10 +899,13 @@ int msm_ispif_subdev_init(struct ispif_device *ispif,
 	/* Interrupt */
 
 	r = platform_get_resource_byname(pdev, IORESOURCE_IRQ, res->interrupt);
-	ispif->irq = r->start;
-	if (IS_ERR_VALUE(ispif->irq))
-		return ispif->irq;
 
+	if (!r) {
+		dev_err(dev, "missing IRQ\n");
+		return -EINVAL;
+	}
+
+	ispif->irq = r->start;
 	snprintf(ispif->irq_name, sizeof(ispif->irq_name), "%s_%s",
 		 dev_name(dev), MSM_ISPIF_NAME);
 	ret = devm_request_irq(dev, ispif->irq, ispif_isr,
@@ -1059,8 +1082,8 @@ int msm_ispif_register_entities(struct ispif_device *ispif,
 		pads[MSM_ISPIF_PAD_SRC].flags = MEDIA_PAD_FL_SOURCE;
 
 		sd->entity.ops = &ispif_media_ops;
-		ret = media_entity_init(&sd->entity, MSM_ISPIF_PADS_NUM,
-					pads, 0);
+		ret = media_entity_pads_init(&sd->entity, MSM_ISPIF_PADS_NUM,
+					     pads);
 		if (ret < 0) {
 			dev_err(dev, "Failed to init media entity\n");
 			goto error;

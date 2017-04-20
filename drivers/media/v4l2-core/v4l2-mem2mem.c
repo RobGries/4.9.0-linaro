@@ -126,8 +126,8 @@ void *v4l2_m2m_buf_remove(struct v4l2_m2m_queue_ctx *q_ctx)
 }
 EXPORT_SYMBOL_GPL(v4l2_m2m_buf_remove);
 
-void v4l2_m2m_buf_remove_exact(struct v4l2_m2m_queue_ctx *q_ctx,
-			       struct vb2_v4l2_buffer *vbuf)
+void v4l2_m2m_buf_remove_by_buf(struct v4l2_m2m_queue_ctx *q_ctx,
+				struct vb2_v4l2_buffer *vbuf)
 {
 	struct v4l2_m2m_buffer *b;
 	unsigned long flags;
@@ -138,7 +138,7 @@ void v4l2_m2m_buf_remove_exact(struct v4l2_m2m_queue_ctx *q_ctx,
 	q_ctx->num_rdy--;
 	spin_unlock_irqrestore(&q_ctx->rdy_spinlock, flags);
 }
-EXPORT_SYMBOL_GPL(v4l2_m2m_buf_remove_exact);
+EXPORT_SYMBOL_GPL(v4l2_m2m_buf_remove_by_buf);
 
 struct vb2_v4l2_buffer *
 v4l2_m2m_buf_remove_by_idx(struct v4l2_m2m_queue_ctx *q_ctx, unsigned int idx)

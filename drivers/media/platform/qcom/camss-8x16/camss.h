@@ -18,10 +18,12 @@
 #ifndef QC_MSM_CAMSS_H
 #define QC_MSM_CAMSS_H
 
+#include <linux/types.h>
 #include <media/v4l2-async.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-subdev.h>
 #include <media/media-device.h>
+#include <media/media-entity.h>
 #include <linux/device.h>
 
 #include "csid.h"
@@ -74,6 +76,7 @@ struct camss {
 	struct csid_device csid[CAMSS_CSID_NUM];
 	struct ispif_device ispif;
 	struct vfe_device vfe;
+	atomic_t ref_count;
 };
 
 struct camss_camera_interface {
@@ -88,6 +91,6 @@ struct camss_async_subdev {
 
 int camss_enable_clocks(int nclocks, struct clk **clock, struct device *dev);
 void camss_disable_clocks(int nclocks, struct clk **clock);
-int msm_camss_pipeline_pm_use(struct media_entity *entity, int use);
+void camss_delete(struct camss *camss);
 
 #endif /* QC_MSM_CAMSS_H */

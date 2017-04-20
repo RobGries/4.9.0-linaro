@@ -24,6 +24,7 @@
 #include <media/media-device.h>
 #include <media/v4l2-async.h>
 #include <media/v4l2-device.h>
+#include <media/v4l2-mc.h>
 #include <media/v4l2-of.h>
 
 #include "camss.h"
@@ -142,180 +143,6 @@ void camss_disable_clocks(int nclocks, struct clk **clock)
 }
 
 /*
- * camss_pipeline_pm_use_count - Count the number of users of a pipeline
- * @entity: The entity
- *
- * Return the total number of users of all video device nodes in the pipeline.
- */
-static int camss_pipeline_pm_use_count(struct media_entity *entity)
-{
-	struct media_entity_graph graph;
-	int use = 0;
-
-	media_entity_graph_walk_start(&graph, entity);
-
-	while ((entity = media_entity_graph_walk_next(&graph))) {
-		if (media_entity_type(entity) == MEDIA_ENT_T_DEVNODE)
-			use += entity->use_count;
-	}
-
-	return use;
-}
-
-/*
- * camss_pipeline_pm_power_one - Apply power change to an entity
- * @entity: The entity
- * @change: Use count change
- *
- * Change the entity use count by @change. If the entity is a subdev update its
- * power state by calling the core::s_power operation when the use count goes
- * from 0 to != 0 or from != 0 to 0.
- *
- * Return 0 on success or a negative error code on failure.
- */
-static int camss_pipeline_pm_power_one(struct media_entity *entity, int change)
-{
-	struct v4l2_subdev *subdev;
-	int ret;
-
-	subdev = media_entity_type(entity) == MEDIA_ENT_T_V4L2_SUBDEV
-	       ? media_entity_to_v4l2_subdev(entity) : NULL;
-
-	if (entity->use_count == 0 && change > 0 && subdev != NULL) {
-		ret = v4l2_subdev_call(subdev, core, s_power, 1);
-		if (ret < 0 && ret != -ENOIOCTLCMD)
-			return ret;
-	}
-
-	entity->use_count += change;
-	WARN_ON(entity->use_count < 0);
-
-	if (entity->use_count == 0 && change < 0 && subdev != NULL)
-		v4l2_subdev_call(subdev, core, s_power, 0);
-
-	return 0;
-}
-
-/*
- * camss_pipeline_pm_power - Apply power change to all entities in a pipeline
- * @entity: The entity
- * @change: Use count change
- *
- * Walk the pipeline to update the use count and the power state of all non-node
- * entities.
- *
- * Return 0 on success or a negative error code on failure.
- */
-static int camss_pipeline_pm_power(struct media_entity *entity, int change)
-{
-	struct media_entity_graph graph;
-	struct media_entity *first = entity;
-	int ret = 0;
-
-	if (!change)
-		return 0;
-
-	media_entity_graph_walk_start(&graph, entity);
-
-	while (!ret && (entity = media_entity_graph_walk_next(&graph)))
-		if (media_entity_type(entity) != MEDIA_ENT_T_DEVNODE)
-			ret = camss_pipeline_pm_power_one(entity, change);
-
-	if (!ret)
-		return 0;
-
-	media_entity_graph_walk_start(&graph, first);
-
-	while ((first = media_entity_graph_walk_next(&graph))
-	       && first != entity)
-		if (media_entity_type(first) != MEDIA_ENT_T_DEVNODE)
-			camss_pipeline_pm_power_one(first, -change);
-
-	return ret;
-}
-
-/*
- * msm_camss_pipeline_pm_use - Update the use count of an entity
- * @entity: The entity
- * @use: Use (1) or stop using (0) the entity
- *
- * Update the use count of all entities in the pipeline and power entities on or
- * off accordingly.
- *
- * Return 0 on success or a negative error code on failure. Powering entities
- * off is assumed to never fail. No failure can occur when the use parameter is
- * set to 0.
- */
-int msm_camss_pipeline_pm_use(struct media_entity *entity, int use)
-{
-	int change = use ? 1 : -1;
-	int ret;
-
-	mutex_lock(&entity->parent->graph_mutex);
-
-	/* Apply use count to node. */
-	entity->use_count += change;
-	WARN_ON(entity->use_count < 0);
-
-	/* Apply power change to connected non-nodes. */
-	ret = camss_pipeline_pm_power(entity, change);
-	if (ret < 0)
-		entity->use_count -= change;
-
-	mutex_unlock(&entity->parent->graph_mutex);
-
-	return ret;
-}
-
-/*
- * camss_pipeline_link_notify - Link management notification callback
- * @link: The link
- * @flags: New link flags that will be applied
- * @notification: The link's state change notification type (MEDIA_DEV_NOTIFY_*)
- *
- * React to link management on powered pipelines by updating the use count of
- * all entities in the source and sink sides of the link. Entities are powered
- * on or off accordingly.
- *
- * Return 0 on success or a negative error code on failure. Powering entities
- * off is assumed to never fail. This function will not fail for disconnection
- * events.
- */
-static int camss_pipeline_link_notify(struct media_link *link, u32 flags,
-				      unsigned int notification)
-{
-	struct media_entity *source = link->source->entity;
-	struct media_entity *sink = link->sink->entity;
-	int source_use = camss_pipeline_pm_use_count(source);
-	int sink_use = camss_pipeline_pm_use_count(sink);
-	int ret;
-
-	if (notification == MEDIA_DEV_NOTIFY_POST_LINK_CH &&
-	    !(flags & MEDIA_LNK_FL_ENABLED)) {
-		/* Powering off entities is assumed to never fail. */
-		camss_pipeline_pm_power(source, -sink_use);
-		camss_pipeline_pm_power(sink, -source_use);
-		return 0;
-	}
-
-	if (notification == MEDIA_DEV_NOTIFY_PRE_LINK_CH &&
-		(flags & MEDIA_LNK_FL_ENABLED)) {
-
-		ret = camss_pipeline_pm_power(source, sink_use);
-		if (ret < 0)
-			return ret;
-
-		ret = camss_pipeline_pm_power(sink, source_use);
-		if (ret < 0)
-			camss_pipeline_pm_power(source, -sink_use);
-
-		return ret;
-	}
-
-	return 0;
-}
-
-/*
  * camss_of_parse_endpoint_node - Parse port endpoint node
  * @dev: Device
  * @node: Device node to be parsed
@@ -372,9 +199,8 @@ static int camss_of_parse_ports(struct device *dev,
 	int ret;
 
 	while ((node = of_graph_get_next_endpoint(dev->of_node, node)))
-		notifier->num_subdevs++;
-
-	dev_err(dev, "notifier->num_subdevs = %u\n", notifier->num_subdevs);
+		if (of_device_is_available(node))
+			notifier->num_subdevs++;
 
 	size = sizeof(*notifier->subdevs) * notifier->num_subdevs;
 	notifier->subdevs = devm_kzalloc(dev, size, GFP_KERNEL);
@@ -506,7 +332,7 @@ static int camss_register_entities(struct camss *camss)
 
 	for (i = 0; i < ARRAY_SIZE(camss->csiphy); i++) {
 		for (j = 0; j < ARRAY_SIZE(camss->csid); j++) {
-			ret = media_entity_create_link(
+			ret = media_create_pad_link(
 				&camss->csiphy[i].subdev.entity,
 				MSM_CSIPHY_PAD_SRC,
 				&camss->csid[j].subdev.entity,
@@ -524,7 +350,7 @@ static int camss_register_entities(struct camss *camss)
 
 	for (i = 0; i < ARRAY_SIZE(camss->csid); i++) {
 		for (j = 0; j < ARRAY_SIZE(camss->ispif.line); j++) {
-			ret = media_entity_create_link(
+			ret = media_create_pad_link(
 				&camss->csid[i].subdev.entity,
 				MSM_CSID_PAD_SRC,
 				&camss->ispif.line[j].subdev.entity,
@@ -543,7 +369,7 @@ static int camss_register_entities(struct camss *camss)
 
 	for (i = 0; i < ARRAY_SIZE(camss->ispif.line); i++) {
 		for (j = 0; j < ARRAY_SIZE(camss->vfe.line); j++) {
-			ret = media_entity_create_link(
+			ret = media_create_pad_link(
 				&camss->ispif.line[i].subdev.entity,
 				MSM_ISPIF_PAD_SRC,
 				&camss->vfe.line[j].subdev.entity,
@@ -641,7 +467,7 @@ static int camss_subdev_notifier_complete(struct v4l2_async_notifier *async)
 				return -EINVAL;
 			}
 
-			ret = media_entity_create_link(sensor, i,
+			ret = media_create_pad_link(sensor, i,
 				input, MSM_CSIPHY_PAD_SINK,
 				MEDIA_LNK_FL_IMMUTABLE | MEDIA_LNK_FL_ENABLED);
 			if (ret < 0) {
@@ -653,8 +479,16 @@ static int camss_subdev_notifier_complete(struct v4l2_async_notifier *async)
 		}
 	}
 
-	return v4l2_device_register_subdev_nodes(&camss->v4l2_dev);
+	ret = v4l2_device_register_subdev_nodes(&camss->v4l2_dev);
+	if (ret < 0)
+		return ret;
+
+	return media_device_register(&camss->media_dev);
 }
+
+static const struct media_device_ops camss_media_ops = {
+	.link_notify = v4l2_pipeline_link_notify,
+};
 
 /*
  * camss_probe - Probe CAMSS platform device
@@ -668,10 +502,11 @@ static int camss_probe(struct platform_device *pdev)
 	struct camss *camss;
 	int ret;
 
-	camss = devm_kzalloc(dev, sizeof(*camss), GFP_KERNEL);
+	camss = kzalloc(sizeof(*camss), GFP_KERNEL);
 	if (!camss)
 		return -ENOMEM;
 
+	atomic_set(&camss->ref_count, 0);
 	camss->dev = dev;
 	platform_set_drvdata(pdev, camss);
 
@@ -685,21 +520,21 @@ static int camss_probe(struct platform_device *pdev)
 	if (ret < 0)
 		return ret;
 
+	ret = dma_set_mask_and_coherent(dev, 0xffffffff);
+	if (ret)
+		return ret;
+
 	camss->media_dev.dev = camss->dev;
 	strlcpy(camss->media_dev.model, "Qualcomm Camera Subsystem",
 		sizeof(camss->media_dev.model));
-	camss->media_dev.link_notify = camss_pipeline_link_notify;
-	ret = media_device_register(&camss->media_dev);
-	if (ret < 0) {
-		dev_err(dev, "Failed to register media device\n");
-		return ret;
-	}
+	camss->media_dev.ops = &camss_media_ops;
+	media_device_init(&camss->media_dev);
 
 	camss->v4l2_dev.mdev = &camss->media_dev;
 	ret = v4l2_device_register(camss->dev, &camss->v4l2_dev);
 	if (ret < 0) {
 		dev_err(dev, "Failed to register V4L2 device\n");
-		goto err_register_v4l2;
+		return ret;
 	}
 
 	ret = camss_register_entities(camss);
@@ -722,6 +557,12 @@ static int camss_probe(struct platform_device *pdev)
 			dev_err(dev, "Failed to register subdev nodes");
 			goto err_register_subdevs;
 		}
+
+		ret = media_device_register(&camss->media_dev);
+		if (ret < 0) {
+			dev_err(dev, "Failed to register media device");
+			goto err_register_subdevs;
+		}
 	}
 
 	return 0;
@@ -730,10 +571,17 @@ err_register_subdevs:
 	camss_unregister_entities(camss);
 err_register_entities:
 	v4l2_device_unregister(&camss->v4l2_dev);
-err_register_v4l2:
-	media_device_unregister(&camss->media_dev);
 
 	return ret;
+}
+
+void camss_delete(struct camss *camss)
+{
+	v4l2_device_unregister(&camss->v4l2_dev);
+	media_device_unregister(&camss->media_dev);
+	media_device_cleanup(&camss->media_dev);
+
+	kfree(camss);
 }
 
 /*
@@ -746,16 +594,19 @@ static int camss_remove(struct platform_device *pdev)
 {
 	struct camss *camss = platform_get_drvdata(pdev);
 
+	msm_vfe_stop_streaming(&camss->vfe);
+
 	v4l2_async_notifier_unregister(&camss->notifier);
 	camss_unregister_entities(camss);
-	v4l2_device_unregister(&camss->v4l2_dev);
-	media_device_unregister(&camss->media_dev);
+
+	if (atomic_read(&camss->ref_count) == 0)
+		camss_delete(camss);
 
 	return 0;
 }
 
 static const struct of_device_id camss_dt_match[] = {
-	{ .compatible = "qcom,8x16-camss" },
+	{ .compatible = "qcom,msm8916-camss" },
 	{ }
 };
 

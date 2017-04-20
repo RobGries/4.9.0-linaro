@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
- * Copyright (C) 2016 Linaro Ltd.
+ * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2017 Linaro Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -45,6 +45,8 @@ static u32 to_codec_type(u32 pixfmt)
 		return HFI_VIDEO_CODEC_VC1;
 	case V4L2_PIX_FMT_VP8:
 		return HFI_VIDEO_CODEC_VP8;
+	case V4L2_PIX_FMT_VP9:
+		return HFI_VIDEO_CODEC_VP9;
 	case V4L2_PIX_FMT_XVID:
 		return HFI_VIDEO_CODEC_DIVX;
 	default:
@@ -86,26 +88,39 @@ unlock:
 	return ret;
 }
 
-int hfi_core_deinit(struct venus_core *core)
+static int core_deinit_wait_atomic_t(atomic_t *p)
 {
-	struct device *dev = core->dev;
-	int ret = 0;
+	schedule();
+	return 0;
+}
+
+int hfi_core_deinit(struct venus_core *core, bool blocking)
+{
+	int ret = 0, empty;
 
 	mutex_lock(&core->lock);
 
 	if (core->state == CORE_UNINIT)
 		goto unlock;
 
-	if (!list_empty(&core->instances)) {
+	empty = list_empty(&core->instances);
+
+	if (!empty && !blocking) {
 		ret = -EBUSY;
 		goto unlock;
 	}
 
-	ret = core->ops->core_deinit(core);
-	if (ret)
-		dev_err(dev, "core deinit failed: %d\n", ret);
+	if (!empty) {
+		mutex_unlock(&core->lock);
+		wait_on_atomic_t(&core->insts_count, core_deinit_wait_atomic_t,
+				 TASK_UNINTERRUPTIBLE);
+		mutex_lock(&core->lock);
+	}
 
-	core->state = CORE_UNINIT;
+	ret = core->ops->core_deinit(core);
+
+	if (!ret)
+		core->state = CORE_UNINIT;
 
 unlock:
 	mutex_unlock(&core->lock);
@@ -114,11 +129,17 @@ unlock:
 
 int hfi_core_suspend(struct venus_core *core)
 {
+	if (core->state != CORE_INIT)
+		return 0;
+
 	return core->ops->suspend(core);
 }
 
-int hfi_core_resume(struct venus_core *core)
+int hfi_core_resume(struct venus_core *core, bool force)
 {
+	if (!force && core->state != CORE_INIT)
+		return 0;
+
 	return core->ops->resume(core);
 }
 
@@ -177,10 +198,12 @@ int hfi_session_create(struct venus_inst *inst, const struct hfi_inst_ops *ops)
 
 	mutex_lock(&core->lock);
 	list_add_tail(&inst->list, &core->instances);
+	atomic_inc(&core->insts_count);
 	mutex_unlock(&core->lock);
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(hfi_session_create);
 
 int hfi_session_init(struct venus_inst *inst, u32 pixfmt)
 {
@@ -204,15 +227,19 @@ int hfi_session_init(struct venus_inst *inst, u32 pixfmt)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(hfi_session_init);
 
 void hfi_session_destroy(struct venus_inst *inst)
 {
 	struct venus_core *core = inst->core;
 
 	mutex_lock(&core->lock);
-	list_del(&inst->list);
+	list_del_init(&inst->list);
+	atomic_dec(&core->insts_count);
+	wake_up_atomic_t(&core->insts_count);
 	mutex_unlock(&core->lock);
 }
+EXPORT_SYMBOL_GPL(hfi_session_destroy);
 
 int hfi_session_deinit(struct venus_inst *inst)
 {
@@ -239,6 +266,7 @@ int hfi_session_deinit(struct venus_inst *inst)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(hfi_session_deinit);
 
 int hfi_session_start(struct venus_inst *inst)
 {
@@ -295,6 +323,7 @@ int hfi_session_continue(struct venus_inst *inst)
 
 	return core->ops->session_continue(inst);
 }
+EXPORT_SYMBOL_GPL(hfi_session_continue);
 
 int hfi_session_abort(struct venus_inst *inst)
 {
@@ -377,6 +406,7 @@ int hfi_session_flush(struct venus_inst *inst)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(hfi_session_flush);
 
 int hfi_session_set_buffers(struct venus_inst *inst, struct hfi_buffer_desc *bd)
 {
@@ -430,6 +460,7 @@ int hfi_session_get_property(struct venus_inst *inst, u32 ptype,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(hfi_session_get_property);
 
 int hfi_session_set_property(struct venus_inst *inst, u32 ptype, void *pdata)
 {
@@ -440,6 +471,7 @@ int hfi_session_set_property(struct venus_inst *inst, u32 ptype, void *pdata)
 
 	return ops->session_set_property(inst, ptype, pdata);
 }
+EXPORT_SYMBOL_GPL(hfi_session_set_property);
 
 int hfi_session_process_buf(struct venus_inst *inst, struct hfi_frame_data *fd)
 {
@@ -467,26 +499,24 @@ irqreturn_t hfi_isr(int irq, void *dev)
 	return core->ops->isr(core);
 }
 
-int hfi_create(struct venus_core *core)
+int hfi_create(struct venus_core *core, const struct hfi_core_ops *ops)
 {
 	int ret;
 
-	if (!core->core_ops)
+	if (!ops)
 		return -EINVAL;
 
-	mutex_lock(&core->lock);
+	atomic_set(&core->insts_count, 0);
+	core->core_ops = ops;
 	core->state = CORE_UNINIT;
 	init_completion(&core->done);
 	pkt_set_version(core->res->hfi_version);
 	ret = venus_hfi_create(core);
-	mutex_unlock(&core->lock);
 
 	return ret;
 }
 
 void hfi_destroy(struct venus_core *core)
 {
-	mutex_lock(&core->lock);
 	venus_hfi_destroy(core);
-	mutex_unlock(&core->lock);
 }

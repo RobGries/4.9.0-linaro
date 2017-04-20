@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
- * Copyright (C) 2016 Linaro Ltd.
+ * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2017 Linaro Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -251,7 +251,8 @@
 #define HFI_VIDEO_CODEC_SPARK			0x00000200
 #define HFI_VIDEO_CODEC_VP8			0x00001000
 #define HFI_VIDEO_CODEC_HEVC			0x00002000
-#define HFI_VIDEO_CODEC_HEVC_HYBRID		0x00004000
+#define HFI_VIDEO_CODEC_VP9			0x00004000
+#define HFI_VIDEO_CODEC_HEVC_HYBRID		0x80000000
 
 #define HFI_H264_PROFILE_BASELINE		0x00000001
 #define HFI_H264_PROFILE_MAIN			0x00000002
@@ -538,10 +539,14 @@ struct hfi_bitrate {
 #define HFI_CAPABILITY_SCALE_Y				0x07
 #define HFI_CAPABILITY_BITRATE				0x08
 #define HFI_CAPABILITY_BFRAME				0x09
+#define HFI_CAPABILITY_PEAKBITRATE			0x0a
 #define HFI_CAPABILITY_HIER_P_NUM_ENH_LAYERS		0x10
 #define HFI_CAPABILITY_ENC_LTR_COUNT			0x11
 #define HFI_CAPABILITY_CP_OUTPUT2_THRESH		0x12
+#define HFI_CAPABILITY_HIER_B_NUM_ENH_LAYERS		0x13
+#define HFI_CAPABILITY_LCU_SIZE				0x14
 #define HFI_CAPABILITY_HIER_P_HYBRID_NUM_ENH_LAYERS	0x15
+#define HFI_CAPABILITY_MBS_PER_SECOND_POWERSAVE		0x16
 
 struct hfi_capability {
 	u32 capability_type;

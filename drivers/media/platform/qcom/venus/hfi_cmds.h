@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
- * Copyright (C) 2016 Linaro Ltd.
+ * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2017 Linaro Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and

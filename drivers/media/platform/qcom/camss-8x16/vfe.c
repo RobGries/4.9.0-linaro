@@ -20,7 +20,6 @@
 #include <linux/interrupt.h>
 #include <linux/iommu.h>
 #include <linux/iopoll.h>
-#include <linux/msm-bus.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
@@ -280,25 +279,85 @@ static void vfe_wm_frame_based(struct vfe_device *vfe, u8 wm, u8 enable)
 			1 << VFE_0_BUS_IMAGE_MASTER_n_WR_CFG_FRM_BASED_SHIFT);
 }
 
+#define CALC_WORD(width, M, N) (((width) * (M) + (N) - 1) / (N))
+
+static int vfe_word_per_line(uint32_t format, uint32_t pixel_per_line)
+{
+	int val = 0;
+
+	switch (format) {
+	case V4L2_PIX_FMT_NV12:
+	case V4L2_PIX_FMT_NV21:
+	case V4L2_PIX_FMT_NV12M:
+	case V4L2_PIX_FMT_NV21M:
+		val = CALC_WORD(pixel_per_line, 1, 8);
+		break;
+	case V4L2_PIX_FMT_YUYV:
+	case V4L2_PIX_FMT_YVYU:
+	case V4L2_PIX_FMT_UYVY:
+	case V4L2_PIX_FMT_VYUY:
+		val = CALC_WORD(pixel_per_line, 2, 8);
+		break;
+	}
+
+	return val;
+}
+
+static void vfe_get_wm_sizes(struct v4l2_pix_format_mplane *pix, u8 plane,
+			     u16 *width, u16 *height, u16 *bytesperline)
+{
+	switch (pix->pixelformat) {
+	case V4L2_PIX_FMT_NV12M:
+	case V4L2_PIX_FMT_NV21M:
+		*width = pix->width;
+		*height = pix->height;
+		*bytesperline = pix->plane_fmt[plane].bytesperline;
+		if (plane == 1)
+			*height /= 2;
+		break;
+	case V4L2_PIX_FMT_NV12:
+	case V4L2_PIX_FMT_NV21:
+		*width = pix->width;
+		*height = pix->height;
+		*bytesperline = pix->plane_fmt[0].bytesperline;
+		if (plane == 1)
+			*height /= 2;
+		break;
+	}
+}
+
 static void vfe_wm_line_based(struct vfe_device *vfe, u32 wm,
-			      u16 width, u16 height, u32 enable)
+			      struct v4l2_pix_format_mplane *pix,
+			      u8 plane, u32 enable)
 {
 	u32 reg;
 
 	if (enable) {
-		reg = height - 1;
-		reg |= (width / 16 - 1) << 16;
+		u16 width = 0, height = 0, bytesperline = 0, wpl;
 
-		writel_relaxed(reg, vfe->base + VFE_0_BUS_IMAGE_MASTER_n_WR_IMAGE_SIZE(wm));
+		vfe_get_wm_sizes(pix, plane, &width, &height, &bytesperline);
+
+		wpl = vfe_word_per_line(pix->pixelformat, width);
+
+		reg = height - 1;
+		reg |= ((wpl + 1) / 2 - 1) << 16;
+
+		writel_relaxed(reg, vfe->base +
+			       VFE_0_BUS_IMAGE_MASTER_n_WR_IMAGE_SIZE(wm));
+
+		wpl = vfe_word_per_line(pix->pixelformat, bytesperline);
 
 		reg = 0x3;
 		reg |= (height - 1) << 4;
-		reg |= (width / 8) << 16;
+		reg |= wpl << 16;
 
-		writel_relaxed(reg, vfe->base + VFE_0_BUS_IMAGE_MASTER_n_WR_BUFFER_CFG(wm));
+		writel_relaxed(reg, vfe->base +
+			       VFE_0_BUS_IMAGE_MASTER_n_WR_BUFFER_CFG(wm));
 	} else {
-		writel_relaxed(0, vfe->base + VFE_0_BUS_IMAGE_MASTER_n_WR_IMAGE_SIZE(wm));
-		writel_relaxed(0, vfe->base + VFE_0_BUS_IMAGE_MASTER_n_WR_BUFFER_CFG(wm));
+		writel_relaxed(0, vfe->base +
+			       VFE_0_BUS_IMAGE_MASTER_n_WR_IMAGE_SIZE(wm));
+		writel_relaxed(0, vfe->base +
+			       VFE_0_BUS_IMAGE_MASTER_n_WR_BUFFER_CFG(wm));
 	}
 }
 
@@ -535,11 +594,11 @@ static void vfe_enable_irq_pix_line(struct vfe_device *vfe, u8 comp,
 
 	if (enable) {
 		vfe_reg_set(vfe, VFE_0_IRQ_MASK_0, irq_en0);
-		vfe_reg_set(vfe, VFE_0_IRQ_MASK_1, irq_en0);
+		vfe_reg_set(vfe, VFE_0_IRQ_MASK_1, irq_en1);
 		vfe_reg_set(vfe, VFE_0_IRQ_COMPOSITE_MASK_0, comp_mask);
 	} else {
 		vfe_reg_clr(vfe, VFE_0_IRQ_MASK_0, irq_en0);
-		vfe_reg_clr(vfe, VFE_0_IRQ_MASK_1, irq_en0);
+		vfe_reg_clr(vfe, VFE_0_IRQ_MASK_1, irq_en1);
 		vfe_reg_clr(vfe, VFE_0_IRQ_COMPOSITE_MASK_0, comp_mask);
 	}
 }
@@ -1161,11 +1220,11 @@ static int vfe_enable_output(struct vfe_line *line)
 
 	switch (output->state) {
 	case VFE_OUTPUT_SINGLE:
-		/* Skip 4 bad frames from sensor TODO: get number from sensor */
+		/* Skip 4 bad frames from sensor */
 		vfe_output_frame_drop(vfe, output, 1 << 4);
 		break;
 	case VFE_OUTPUT_CONTINUOUS:
-		/* Skip 4 bad frames from sensor TODO: get number from sensor */
+		/* Skip 4 bad frames from sensor */
 		vfe_output_frame_drop(vfe, output, 3 << 4);
 		break;
 	default:
@@ -1200,16 +1259,9 @@ static int vfe_enable_output(struct vfe_line *line)
 			vfe_wm_set_ub_cfg(vfe, output->wm_idx[i],
 					  (ub_size + 1) * output->wm_idx[i],
 					  ub_size);
-			if (i == 0)
-				vfe_wm_line_based(vfe, output->wm_idx[i],
-						  line->fmt[MSM_VFE_PAD_SRC].width,
-						  line->fmt[MSM_VFE_PAD_SRC].height,
-						  1);
-			else if (i == 1)
-				vfe_wm_line_based(vfe, output->wm_idx[i],
-						  line->fmt[MSM_VFE_PAD_SRC].width,
-						  line->fmt[MSM_VFE_PAD_SRC].height / 2,
-						  1);
+			vfe_wm_line_based(vfe, output->wm_idx[i],
+					&line->video_out.active_fmt.fmt.pix_mp,
+					i, 1);
 			vfe_wm_enable(vfe, output->wm_idx[i], 1);
 			vfe_bus_reload_wm(vfe, output->wm_idx[i]);
 		}
@@ -1271,7 +1323,7 @@ static int vfe_disable_output(struct vfe_line *line)
 		spin_unlock_irqrestore(&vfe->output_lock, flags);
 	} else {
 		for (i = 0; i < output->wm_num; i++) {
-			vfe_wm_line_based(vfe, output->wm_idx[i], 0, 0, 0);
+			vfe_wm_line_based(vfe, output->wm_idx[i], NULL, i, 0);
 			vfe_set_cgc_override(vfe, output->wm_idx[i], 0);
 		}
 
@@ -1465,6 +1517,7 @@ static void vfe_isr_wm_done(struct vfe_device *vfe, u8 wm)
 	dma_addr_t *new_addr;
 	unsigned long flags;
 	u32 active_index;
+	u64 ts = ktime_get_ns();
 	unsigned int i;
 
 	active_index = vfe_wm_get_ping_pong_status(vfe, wm);
@@ -1493,7 +1546,7 @@ static void vfe_isr_wm_done(struct vfe_device *vfe, u8 wm)
 		goto out_unlock;
 	}
 
-	v4l2_get_timestamp(&ready_buf->vb.timestamp);
+	ready_buf->vb.vb2_buf.timestamp = ts;
 	ready_buf->vb.sequence = output->sequence++;
 
 	/* Get next buffer */
@@ -1608,33 +1661,6 @@ static irqreturn_t vfe_isr(int irq, void *dev)
 	return IRQ_HANDLED;
 }
 
-static int vfe_bus_request(struct vfe_device *vfe)
-{
-	int ret;
-
-	vfe->bus_client = msm_bus_scale_register_client(vfe->bus_scale_table);
-	if (!vfe->bus_client) {
-		dev_err(to_device(vfe), "Failed to register bus client\n");
-		return -ENOENT;
-	}
-
-	ret = msm_bus_scale_client_update_request(vfe->bus_client, 1);
-	if (ret < 0) {
-		dev_err(to_device(vfe), "Failed bus scale update %d\n", ret);
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
-static void vfe_bus_release(struct vfe_device *vfe)
-{
-	if (vfe->bus_client) {
-		msm_bus_scale_unregister_client(vfe->bus_client);
-		vfe->bus_client = 0;
-	}
-}
-
 /*
  * vfe_get - Power up and reset VFE module
  * @vfe: VFE Device
@@ -1648,10 +1674,6 @@ static int vfe_get(struct vfe_device *vfe)
 	mutex_lock(&vfe->power_lock);
 
 	if (vfe->power_count == 0) {
-		ret = vfe_bus_request(vfe);
-		if (ret < 0)
-			goto error_clocks;
-
 		ret = camss_enable_clocks(vfe->nclocks, vfe->clock,
 					  to_device(vfe));
 		if (ret < 0)
@@ -1696,7 +1718,6 @@ static void vfe_put(struct vfe_device *vfe)
 			vfe->was_streaming = 0;
 			vfe_halt(vfe);
 		}
-		vfe_bus_release(vfe);
 		camss_disable_clocks(vfe->nclocks, vfe->clock);
 	}
 
@@ -1718,7 +1739,7 @@ static struct vfe_line *vfe_video_pad_to_line(struct media_pad *pad)
 	struct v4l2_subdev *subdev;
 
 	vfe_pad = media_entity_remote_pad(pad);
-	if (pad == NULL)
+	if (vfe_pad == NULL)
 		return NULL;
 
 	subdev = media_entity_to_v4l2_subdev(vfe_pad->entity);
@@ -2156,10 +2177,12 @@ int msm_vfe_subdev_init(struct vfe_device *vfe, struct resources *res)
 
 	r = platform_get_resource_byname(pdev, IORESOURCE_IRQ,
 					 res->interrupt[0]);
-	vfe->irq = r->start;
-	if (IS_ERR_VALUE(vfe->irq))
-		return vfe->irq;
+	if (!r) {
+		dev_err(dev, "missing IRQ\n");
+		return -EINVAL;
+	}
 
+	vfe->irq = r->start;
 	snprintf(vfe->irq_name, sizeof(vfe->irq_name), "%s_%s%d",
 		 dev_name(dev), MSM_VFE_NAME, vfe->id);
 	ret = devm_request_irq(dev, vfe->irq, vfe_isr,
@@ -2198,14 +2221,6 @@ int msm_vfe_subdev_init(struct vfe_device *vfe, struct resources *res)
 				return ret;
 			}
 		}
-	}
-
-	/* MSM Bus */
-
-	vfe->bus_scale_table = msm_bus_cl_get_pdata(pdev);
-	if (!vfe->bus_scale_table) {
-		dev_err(dev, "bus scaling is disabled\n");
-		return -1;
 	}
 
 	init_completion(&vfe->reset_complete);
@@ -2298,10 +2313,18 @@ static const struct media_entity_operations vfe_media_ops = {
 	.link_validate = v4l2_subdev_link_validate,
 };
 
-static struct camss_video_ops camss_vfe_video_ops = {
+static const struct camss_video_ops camss_vfe_video_ops = {
 	.queue_buffer = vfe_queue_buffer,
 	.flush_buffers = vfe_flush_buffers,
 };
+
+void msm_vfe_stop_streaming(struct vfe_device *vfe)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(vfe->line); i++)
+		msm_video_stop_streaming(&vfe->line[i].video_out);
+}
 
 /*
  * msm_vfe_register_entities - Register subdev node for VFE module
@@ -2349,7 +2372,8 @@ int msm_vfe_register_entities(struct vfe_device *vfe,
 		pads[MSM_VFE_PAD_SRC].flags = MEDIA_PAD_FL_SOURCE;
 
 		sd->entity.ops = &vfe_media_ops;
-		ret = media_entity_init(&sd->entity, MSM_VFE_PADS_NUM, pads, 0);
+		ret = media_entity_pads_init(&sd->entity, MSM_VFE_PADS_NUM,
+					     pads);
 		if (ret < 0) {
 			dev_err(dev, "Failed to init media entity\n");
 			goto error_init;
@@ -2362,6 +2386,12 @@ int msm_vfe_register_entities(struct vfe_device *vfe,
 		}
 
 		video_out->ops = &camss_vfe_video_ops;
+		video_out->bpl_alignment = 8;
+		video_out->line_based = 0;
+		if (i == VFE_LINE_PIX) {
+			video_out->bpl_alignment = 16;
+			video_out->line_based = 1;
+		}
 		snprintf(name, ARRAY_SIZE(name), "%s%d_%s%d",
 			 MSM_VFE_NAME, vfe->id, "video", i);
 		ret = msm_video_register(video_out, v4l2_dev, name);
@@ -2370,13 +2400,13 @@ int msm_vfe_register_entities(struct vfe_device *vfe,
 			goto error_reg_video;
 		}
 
-		ret = media_entity_create_link(
+		ret = media_create_pad_link(
 				&sd->entity, MSM_VFE_PAD_SRC,
-				&video_out->vdev->entity, 0,
+				&video_out->vdev.entity, 0,
 				MEDIA_LNK_FL_IMMUTABLE | MEDIA_LNK_FL_ENABLED);
 		if (ret < 0) {
 			dev_err(dev, "Failed to link %s->%s entities\n",
-			       sd->entity.name, video_out->vdev->entity.name);
+			       sd->entity.name, video_out->vdev.entity.name);
 			goto error_link;
 		}
 	}

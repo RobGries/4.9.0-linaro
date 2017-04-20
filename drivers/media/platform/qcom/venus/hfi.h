@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- * Copyright (C) 2016 Linaro Ltd.
+ * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2017 Linaro Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -71,6 +71,7 @@ struct hfi_event_data {
 	u32 event_type;
 	u32 packet_buffer;
 	u32 extradata_buffer;
+	u32 tag;
 	u32 profile;
 	u32 level;
 };
@@ -97,7 +98,7 @@ struct hfi_core_ops {
 struct hfi_inst_ops {
 	void (*buf_done)(struct venus_inst *inst, unsigned int buf_type,
 			 u32 tag, u32 bytesused, u32 data_offset, u32 flags,
-			 u64 timestamp_us);
+			 u32 hfi_flags, u64 timestamp_us);
 	void (*event_notify)(struct venus_inst *inst, u32 event,
 			     struct hfi_event_data *data);
 };
@@ -140,13 +141,13 @@ struct hfi_ops {
 	irqreturn_t (*isr_thread)(struct venus_core *core);
 };
 
-int hfi_create(struct venus_core *core);
+int hfi_create(struct venus_core *core, const struct hfi_core_ops *ops);
 void hfi_destroy(struct venus_core *core);
 
 int hfi_core_init(struct venus_core *core);
-int hfi_core_deinit(struct venus_core *core);
+int hfi_core_deinit(struct venus_core *core, bool blocking);
 int hfi_core_suspend(struct venus_core *core);
-int hfi_core_resume(struct venus_core *core);
+int hfi_core_resume(struct venus_core *core, bool force);
 int hfi_core_trigger_ssr(struct venus_core *core, u32 type);
 int hfi_core_ping(struct venus_core *core);
 int hfi_session_create(struct venus_inst *inst, const struct hfi_inst_ops *ops);

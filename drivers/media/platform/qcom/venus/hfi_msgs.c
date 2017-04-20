@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- * Copyright (C) 2016 Linaro Ltd.
+ * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2017 Linaro Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -25,7 +25,6 @@
 static void event_seq_changed(struct venus_core *core, struct venus_inst *inst,
 			      struct hfi_msg_event_notify_pkt *pkt)
 {
-	struct device *dev = core->dev;
 	struct hfi_event_data event = {0};
 	int num_properties_changed;
 	struct hfi_framesize *frame_sz;
@@ -52,31 +51,25 @@ static void event_seq_changed(struct venus_core *core, struct venus_inst *inst,
 		goto done;
 	}
 
-	data_ptr = (u8 *) &pkt->ext_event_data[0];
+	data_ptr = (u8 *)&pkt->ext_event_data[0];
 	do {
 		ptype = *((u32 *)data_ptr);
 		switch (ptype) {
 		case HFI_PROPERTY_PARAM_FRAME_SIZE:
 			data_ptr += sizeof(u32);
-			frame_sz = (struct hfi_framesize *) data_ptr;
+			frame_sz = (struct hfi_framesize *)data_ptr;
 			event.width = frame_sz->width;
 			event.height = frame_sz->height;
 			data_ptr += sizeof(frame_sz);
-			dev_dbg(dev, "%s cmd: frame size: %ux%u\n",
-				__func__, event.width, event.height);
 			break;
 		case HFI_PROPERTY_PARAM_PROFILE_LEVEL_CURRENT:
 			data_ptr += sizeof(u32);
-			profile_level = (struct hfi_profile_level *) data_ptr;
+			profile_level = (struct hfi_profile_level *)data_ptr;
 			event.profile = profile_level->profile;
 			event.level = profile_level->level;
 			data_ptr += sizeof(profile_level);
-			dev_dbg(dev, "%s cmd: profile-level: %u - %u\n",
-				__func__, event.profile, event.level);
 			break;
 		default:
-			dev_dbg(dev, "%s cmd: %#x not supported\n",
-				__func__, ptype);
 			break;
 		}
 		num_properties_changed--;
@@ -99,13 +92,21 @@ static void event_release_buffer_ref(struct venus_core *core,
 	event.event_type = HFI_EVENT_RELEASE_BUFFER_REFERENCE;
 	event.packet_buffer = data->packet_buffer;
 	event.extradata_buffer = data->extradata_buffer;
+	event.tag = data->output_tag;
 
 	inst->error = HFI_ERR_NONE;
 	inst->ops->event_notify(inst, EVT_SYS_EVENT_CHANGE, &event);
 }
 
-static void event_sys_error(struct venus_core *core, u32 event)
+static void event_sys_error(struct venus_core *core, u32 event,
+			    struct hfi_msg_event_notify_pkt *pkt)
 {
+	if (pkt)
+		dev_dbg(core->dev,
+			"sys error (session id:%x, data1:%x, data2:%x)\n",
+			pkt->shdr.session_id, pkt->event_data1,
+			pkt->event_data2);
+
 	core->core_ops->event_notify(core, event);
 }
 
@@ -130,8 +131,9 @@ event_session_error(struct venus_core *core, struct venus_inst *inst,
 		inst->error = HFI_ERR_NONE;
 		break;
 	default:
-		dev_err(dev, "session error: event id:%x, session id:%x\n",
-			pkt->event_data1, pkt->shdr.session_id);
+		dev_err(dev, "session error: event id:%x (%x), session id:%x\n",
+			pkt->event_data1, pkt->event_data2,
+			pkt->shdr.session_id);
 
 		inst->error = pkt->event_data1;
 		inst->ops->event_notify(inst, EVT_SESSION_ERROR, NULL);
@@ -144,14 +146,12 @@ static void hfi_event_notify(struct venus_core *core, struct venus_inst *inst,
 {
 	struct hfi_msg_event_notify_pkt *pkt = packet;
 
-	if (!packet) {
-		dev_err(core->dev, "invalid packet\n");
+	if (!packet)
 		return;
-	}
 
 	switch (pkt->event_id) {
 	case HFI_EVENT_SYS_ERROR:
-		event_sys_error(core, EVT_SYS_ERROR);
+		event_sys_error(core, EVT_SYS_ERROR, pkt);
 		break;
 	case HFI_EVENT_SESSION_ERROR:
 		event_session_error(core, inst, pkt);
@@ -197,6 +197,9 @@ static void hfi_sys_init_done(struct venus_core *core, struct venus_inst *inst,
 	}
 
 	data = (u8 *)&pkt->data[0];
+
+	if (core->res->hfi_version == HFI_VERSION_3XX)
+		goto err_no_prop;
 
 	while (num_properties && rem_bytes >= sizeof(u32)) {
 		ptype = *((u32 *)data);
@@ -474,7 +477,7 @@ static u32 init_done_read_prop(struct venus_core *core, struct venus_inst *inst,
 	if (err)
 		return err;
 
-	data = (u8 *) &pkt->data[0];
+	data = (u8 *)&pkt->data[0];
 	num_props = pkt->num_properties;
 
 	while (err == HFI_ERR_NONE && num_props && rem_bytes >= sizeof(u32)) {
@@ -510,7 +513,7 @@ static u32 init_done_read_prop(struct venus_core *core, struct venus_inst *inst,
 			next_offset += sizeof(u32);
 
 			while (num_caps &&
-			      (rem_bytes - next_offset) >= sizeof(u32)) {
+			       (rem_bytes - next_offset) >= sizeof(u32)) {
 				hfi_copy_cap_prop(cap, inst);
 				cap++;
 				next_offset += sizeof(*cap);
@@ -652,15 +655,17 @@ static u32 init_done_read_prop(struct venus_core *core, struct venus_inst *inst,
 				(data + next_offset);
 			int i;
 
-			if (prop->buffer_type == HFI_BUFFER_OUTPUT ||
-			    prop->buffer_type == HFI_BUFFER_OUTPUT2) {
-				for (i = 0; i < prop->num_entries; i++) {
+			for (i = 0; i < prop->num_entries; i++) {
+				if (prop->buffer_type == HFI_BUFFER_OUTPUT ||
+				    prop->buffer_type == HFI_BUFFER_OUTPUT2) {
 					switch (prop->data[i]) {
 					case HFI_BUFFER_MODE_STATIC:
 						inst->cap_bufs_mode_static = 1;
 						break;
 					case HFI_BUFFER_MODE_DYNAMIC:
 						inst->cap_bufs_mode_dynamic = 1;
+						break;
+					default:
 						break;
 					}
 				}
@@ -724,12 +729,10 @@ static void hfi_session_etb_done(struct venus_core *core,
 				 struct venus_inst *inst, void *packet)
 {
 	struct hfi_msg_session_empty_buffer_done_pkt *pkt = packet;
-	u32 flags = 0;
 
 	inst->error = pkt->error_type;
-
 	inst->ops->buf_done(inst, HFI_BUFFER_INPUT, pkt->input_tag,
-			    pkt->filled_len, pkt->offset, flags, 0);
+			    pkt->filled_len, pkt->offset, 0, 0, 0);
 }
 
 static void hfi_session_ftb_done(struct venus_core *core,
@@ -737,10 +740,10 @@ static void hfi_session_ftb_done(struct venus_core *core,
 {
 	u32 session_type = inst->session_type;
 	u64 timestamp_us = 0;
-	u32 timestamp_hi, timestamp_lo;
+	u32 timestamp_hi = 0, timestamp_lo = 0;
 	unsigned int error;
-	u32 flags = 0, hfi_flags, offset, filled_len;
-	u32 pic_type, packet_buffer, buffer_type, output_tag;
+	u32 flags = 0, hfi_flags = 0, offset = 0, filled_len = 0;
+	u32 pic_type = 0, packet_buffer, buffer_type = 0, output_tag = -1;
 
 	if (session_type == VIDC_SESSION_TYPE_ENC) {
 		struct hfi_msg_session_fbd_compressed_pkt *pkt = packet;
@@ -787,8 +790,6 @@ static void hfi_session_ftb_done(struct venus_core *core,
 
 	switch (pic_type) {
 	case HFI_PICTURE_IDR:
-		flags |= V4L2_BUF_FLAG_KEYFRAME;
-		break;
 	case HFI_PICTURE_I:
 		flags |= V4L2_BUF_FLAG_KEYFRAME;
 		break;
@@ -813,7 +814,7 @@ static void hfi_session_ftb_done(struct venus_core *core,
 done:
 	inst->error = error;
 	inst->ops->buf_done(inst, buffer_type, output_tag, filled_len,
-			    offset, flags, timestamp_us);
+			    offset, flags, hfi_flags, timestamp_us);
 }
 
 static void hfi_session_start_done(struct venus_core *core,
@@ -979,7 +980,7 @@ static const struct hfi_done_handler handlers[] = {
 
 void hfi_process_watchdog_timeout(struct venus_core *core)
 {
-	event_sys_error(core, EVT_SYS_WATCHDOG_TIMEOUT);
+	event_sys_error(core, EVT_SYS_WATCHDOG_TIMEOUT, NULL);
 }
 
 static struct venus_inst *to_instance(struct venus_core *core, u32 session_id)
@@ -1013,7 +1014,7 @@ u32 hfi_process_msg_packet(struct venus_core *core, struct hfi_pkt_hdr *hdr)
 		break;
 	}
 
-	if (found == false)
+	if (!found)
 		return hdr->pkt_type;
 
 	if (hdr->size && hdr->size < handler->pkt_sz &&
@@ -1033,8 +1034,9 @@ u32 hfi_process_msg_packet(struct venus_core *core, struct hfi_pkt_hdr *hdr)
 		inst = to_instance(core, pkt->shdr.session_id);
 
 		if (!inst)
-			dev_warn(dev, "no valid instance(pkt session_id:%x)\n",
-				 pkt->shdr.session_id);
+			dev_warn(dev, "no valid instance(pkt session_id:%x, pkt:%x)\n",
+				 pkt->shdr.session_id,
+				 handler ? handler->pkt : 0);
 
 		/*
 		 * Event of type HFI_EVENT_SYS_ERROR will not have any session

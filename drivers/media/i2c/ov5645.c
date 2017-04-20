@@ -604,8 +604,8 @@ static int ov5645_write_reg_to(struct ov5645 *ov5645, u16 reg, u8 val, u16 i2c_a
 
 static int ov5645_write_reg(struct ov5645 *ov5645, u16 reg, u8 val)
 {
-	int ret;
 	u16 i2c_addr = ov5645->i2c_client->addr;
+	int ret;
 
 	ret = msm_cci_ctrl_write(i2c_addr, reg, &val, 1);
 	if (ret < 0)
@@ -618,8 +618,8 @@ static int ov5645_write_reg(struct ov5645 *ov5645, u16 reg, u8 val)
 
 static int ov5645_read_reg(struct ov5645 *ov5645, u16 reg, u8 *val)
 {
-	int ret;
 	u16 i2c_addr = ov5645->i2c_client->addr;
+	int ret;
 
 	ret = msm_cci_ctrl_read(i2c_addr, reg, val, 1);
 	if (ret < 0) {
@@ -985,7 +985,7 @@ __ov5645_get_pad_crop(struct ov5645 *ov5645, struct v4l2_subdev_pad_config *cfg,
 static const struct ov5645_mode_info *
 ov5645_find_nearest_mode(unsigned int width, unsigned int height)
 {
-	unsigned int i;
+	int i;
 
 	for (i = ARRAY_SIZE(ov5645_mode_info_data) - 1; i >= 0; i--) {
 		if (ov5645_mode_info_data[i].width <= width &&
@@ -1036,9 +1036,6 @@ static int ov5645_entity_init_cfg(struct v4l2_subdev *subdev,
 				  struct v4l2_subdev_pad_config *cfg)
 {
 	struct v4l2_subdev_format fmt = { 0 };
-	struct ov5645 *ov5645 = to_ov5645(subdev);
-
-	dev_err(ov5645->dev, "%s: Enter\n", __func__);
 
 	fmt.which = cfg ? V4L2_SUBDEV_FORMAT_TRY : V4L2_SUBDEV_FORMAT_ACTIVE;
 	fmt.format.width = 1920;
@@ -1097,15 +1094,6 @@ static int ov5645_s_stream(struct v4l2_subdev *subdev, int enable)
 	return 0;
 }
 
-static int ov5645_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
-{
-	struct v4l2_subdev_pad_config cfg;
-
-	memset(&cfg, 0, sizeof(cfg));
-
-	return ov5645_entity_init_cfg(sd, &cfg);
-}
-
 static const struct v4l2_subdev_core_ops ov5645_core_ops = {
 	.s_power = ov5645_s_power,
 };
@@ -1115,6 +1103,7 @@ static const struct v4l2_subdev_video_ops ov5645_video_ops = {
 };
 
 static const struct v4l2_subdev_pad_ops ov5645_subdev_pad_ops = {
+	.init_cfg = ov5645_entity_init_cfg,
 	.enum_mbus_code = ov5645_enum_mbus_code,
 	.enum_frame_size = ov5645_enum_frame_size,
 	.get_fmt = ov5645_get_format,
@@ -1129,7 +1118,6 @@ static const struct v4l2_subdev_ops ov5645_subdev_ops = {
 };
 
 static const struct v4l2_subdev_internal_ops ov5645_subdev_internal_ops = {
-	.open = ov5645_open
 };
 
 static int ov5645_probe(struct i2c_client *client,
@@ -1141,8 +1129,6 @@ static int ov5645_probe(struct i2c_client *client,
 	u8 chip_id_high, chip_id_low;
 	u32 xclk_freq;
 	int ret;
-
-	dev_dbg(dev, "%s: Enter, i2c addr = 0x%x\n", __func__, client->addr);
 
 	ov5645 = devm_kzalloc(dev, sizeof(struct ov5645), GFP_KERNEL);
 	if (!ov5645)
@@ -1285,7 +1271,7 @@ static int ov5645_probe(struct i2c_client *client,
 	ov5645->sd.internal_ops = &ov5645_subdev_internal_ops;
 	ov5645->sd.dev = &client->dev;
 
-	ret = media_entity_init(&ov5645->sd.entity, 1, &ov5645->pad, 0);
+	ret = media_entity_pads_init(&ov5645->sd.entity, 1, &ov5645->pad);
 	if (ret < 0) {
 		dev_err(dev, "could not register media entity\n");
 		goto free_ctrl;

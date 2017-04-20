@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
- * Copyright (C) 2016 Linaro Ltd.
+ * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2017 Linaro Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -38,4 +38,7 @@ int helper_set_output_resolution(struct venus_inst *inst, unsigned int width,
 int helper_set_num_bufs(struct venus_inst *inst, unsigned int input_bufs,
 			unsigned int output_bufs);
 int helper_set_color_format(struct venus_inst *inst, u32 fmt);
+void helper_acquire_buf_ref(struct vb2_v4l2_buffer *vbuf);
+void helper_release_buf_ref(struct venus_inst *inst, unsigned int idx);
+void helper_init_instance(struct venus_inst *inst);
 #endif

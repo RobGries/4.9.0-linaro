@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- * Copyright (C) 2016 Linaro Ltd.
+ * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2017 Linaro Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -34,7 +34,7 @@ void pkt_sys_pc_prep(struct hfi_sys_pc_prep_pkt *pkt)
 
 void pkt_sys_idle_indicator(struct hfi_sys_set_property_pkt *pkt, u32 enable)
 {
-	struct hfi_enable *hfi = (struct hfi_enable *) &pkt->data[1];
+	struct hfi_enable *hfi = (struct hfi_enable *)&pkt->data[1];
 
 	pkt->hdr.size = sizeof(*pkt) + sizeof(*hfi) + sizeof(u32);
 	pkt->hdr.pkt_type = HFI_CMD_SYS_SET_PROPERTY;
@@ -52,7 +52,7 @@ void pkt_sys_debug_config(struct hfi_sys_set_property_pkt *pkt, u32 mode,
 	pkt->hdr.pkt_type = HFI_CMD_SYS_SET_PROPERTY;
 	pkt->num_properties = 1;
 	pkt->data[0] = HFI_PROPERTY_SYS_DEBUG_CONFIG;
-	hfi = (struct hfi_debug_config *) &pkt->data[1];
+	hfi = (struct hfi_debug_config *)&pkt->data[1];
 	hfi->config = config;
 	hfi->mode = mode;
 }
@@ -77,7 +77,7 @@ int pkt_sys_set_resource(struct hfi_sys_set_resource_pkt *pkt, u32 id, u32 size,
 	case VIDC_RESOURCE_OCMEM:
 	case VIDC_RESOURCE_VMEM: {
 		struct hfi_resource_ocmem *res =
-			(struct hfi_resource_ocmem *) &pkt->resource_data[0];
+			(struct hfi_resource_ocmem *)&pkt->resource_data[0];
 
 		res->size = size;
 		res->mem = addr;
@@ -121,10 +121,9 @@ void pkt_sys_ping(struct hfi_sys_ping_pkt *pkt, u32 cookie)
 	pkt->client_data = cookie;
 }
 
-void pkt_sys_power_control(struct hfi_sys_set_property_pkt *pkt,
-				  u32 enable)
+void pkt_sys_power_control(struct hfi_sys_set_property_pkt *pkt, u32 enable)
 {
-	struct hfi_enable *hfi = (struct hfi_enable *) &pkt->data[1];
+	struct hfi_enable *hfi = (struct hfi_enable *)&pkt->data[1];
 
 	pkt->hdr.size = sizeof(*pkt) + sizeof(*hfi) + sizeof(u32);
 	pkt->hdr.pkt_type = HFI_CMD_SYS_SET_PROPERTY;
@@ -202,7 +201,7 @@ int pkt_session_set_buffers(struct hfi_session_set_buffers_pkt *pkt,
 		pkt->extradata_size = bd->extradata_size;
 		pkt->shdr.hdr.size = sizeof(*pkt) - sizeof(u32) +
 			(bd->num_buffers * sizeof(*bi));
-		bi = (struct hfi_buffer_info *) pkt->buffer_info;
+		bi = (struct hfi_buffer_info *)pkt->buffer_info;
 		for (i = 0; i < pkt->num_buffers; i++) {
 			bi->buffer_addr = bd->device_addr;
 			bi->extradata_addr = bd->extradata_addr;
@@ -237,7 +236,7 @@ int pkt_session_unset_buffers(struct hfi_session_release_buffer_pkt *pkt,
 	    bd->buffer_type == HFI_BUFFER_OUTPUT2) {
 		struct hfi_buffer_info *bi;
 
-		bi = (struct hfi_buffer_info *) pkt->buffer_info;
+		bi = (struct hfi_buffer_info *)pkt->buffer_info;
 		for (i = 0; i < pkt->num_buffers; i++) {
 			bi->buffer_addr = bd->device_addr;
 			bi->extradata_addr = bd->extradata_addr;
@@ -1059,7 +1058,7 @@ static int pkt_session_set_property_1x(struct hfi_session_set_property_pkt *pkt,
 
 		pkt->data[0] = HFI_PROPERTY_PARAM_VPE_COLOR_SPACE_CONVERSION;
 		memcpy(csc->csc_matrix, in->csc_matrix,
-			sizeof(csc->csc_matrix));
+		       sizeof(csc->csc_matrix));
 		memcpy(csc->csc_bias, in->csc_bias, sizeof(csc->csc_bias));
 		memcpy(csc->csc_limit, in->csc_limit, sizeof(csc->csc_limit));
 		pkt->shdr.hdr.size += sizeof(u32) + sizeof(*csc);

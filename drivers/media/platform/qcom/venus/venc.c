@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- * Copyright (C) 2016 Linaro Ltd.
+ * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2017 Linaro Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -12,15 +12,18 @@
  * GNU General Public License for more details.
  *
  */
-
-#include <linux/slab.h>
+#include <linux/clk.h>
+#include <linux/module.h>
+#include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
+#include <linux/slab.h>
 #include <media/v4l2-mem2mem.h>
 #include <media/videobuf2-dma-sg.h>
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-event.h>
 #include <media/v4l2-ctrls.h>
 
+#include "hfi_venus_io.h"
 #include "core.h"
 #include "helpers.h"
 #include "venc.h"
@@ -53,6 +56,13 @@ static u32 get_framesize_compressed(u32 width, u32 height)
 	return ALIGN(sz, SZ_4K);
 }
 
+/*
+ * Three resons to keep MPLANE formats (despite that the number of planes
+ * currently is one):
+ * - the MPLANE formats allow only one plane to be used
+ * - the downstream driver use MPLANE formats too
+ * - future firmware versions could add support for >1 planes
+ */
 static const struct venus_format venc_formats[] = {
 	{
 		.pixfmt = V4L2_PIX_FMT_NV12,
@@ -72,6 +82,10 @@ static const struct venus_format venc_formats[] = {
 		.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE,
 	}, {
 		.pixfmt = V4L2_PIX_FMT_VP8,
+		.num_planes = 1,
+		.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE,
+	}, {
+		.pixfmt = V4L2_PIX_FMT_VP9,
 		.num_planes = 1,
 		.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE,
 	},
@@ -226,9 +240,6 @@ venc_querycap(struct file *file, void *fh, struct v4l2_capability *cap)
 	strlcpy(cap->card, "Qualcomm Venus video encoder", sizeof(cap->card));
 	strlcpy(cap->bus_info, "platform:qcom-venus", sizeof(cap->bus_info));
 
-	cap->device_caps = V4L2_CAP_VIDEO_M2M_MPLANE | V4L2_CAP_STREAMING;
-	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
-
 	return 0;
 }
 
@@ -277,7 +288,11 @@ venc_try_fmt_common(struct venus_inst *inst, struct v4l2_format *f)
 	pixmp->height = clamp(pixmp->height, inst->cap_height.min,
 			      inst->cap_height.max);
 
-	pixmp->height = ALIGN(pixmp->height, 32);
+	if (inst->core->res->hfi_version == HFI_VERSION_LEGACY)
+		pixmp->height = ALIGN(pixmp->height, 32);
+
+	pixmp->width = ALIGN(pixmp->width, 2);
+	pixmp->height = ALIGN(pixmp->height, 2);
 
 	if (pixmp->field == V4L2_FIELD_ANY)
 		pixmp->field = V4L2_FIELD_NONE;
@@ -695,18 +710,18 @@ static int venc_set_properties(struct venus_inst *inst)
 
 	if (inst->fmt_cap->pixfmt == V4L2_PIX_FMT_H264) {
 		profile = venc_v4l2_to_hfi(V4L2_CID_MPEG_VIDEO_H264_PROFILE,
-					   ctr->profile);
+					   ctr->profile.h264);
 		level = venc_v4l2_to_hfi(V4L2_CID_MPEG_VIDEO_H264_LEVEL,
-					 ctr->level);
+					 ctr->level.h264);
 	} else if (inst->fmt_cap->pixfmt == V4L2_PIX_FMT_VP8) {
 		profile = venc_v4l2_to_hfi(V4L2_CID_MPEG_VIDEO_VPX_PROFILE,
-					   ctr->profile);
+					   ctr->profile.vpx);
 		level = 0;
 	} else if (inst->fmt_cap->pixfmt == V4L2_PIX_FMT_MPEG4) {
 		profile = venc_v4l2_to_hfi(V4L2_CID_MPEG_VIDEO_MPEG4_PROFILE,
-					   ctr->profile);
+					   ctr->profile.mpeg4);
 		level = venc_v4l2_to_hfi(V4L2_CID_MPEG_VIDEO_MPEG4_LEVEL,
-					 ctr->level);
+					 ctr->level.mpeg4);
 	} else if (inst->fmt_cap->pixfmt == V4L2_PIX_FMT_H263) {
 		profile = 0;
 		level = 0;
@@ -753,16 +768,11 @@ deinit:
 static int venc_out_num_buffers(struct venus_inst *inst, unsigned int *num)
 {
 	struct hfi_buffer_requirements bufreq;
-	struct device *dev = inst->core->dev;
-	int ret, ret2;
-
-	ret = pm_runtime_get_sync(dev);
-	if (ret < 0)
-		return ret;
+	int ret;
 
 	ret = venc_init_session(inst);
 	if (ret)
-		goto put_sync;
+		return ret;
 
 	ret = helper_get_bufreq(inst, HFI_BUFFER_INPUT, &bufreq);
 
@@ -770,19 +780,36 @@ static int venc_out_num_buffers(struct venus_inst *inst, unsigned int *num)
 
 	hfi_session_deinit(inst);
 
-put_sync:
-	ret2 = pm_runtime_put_sync(dev);
-
-	return ret ? ret : ret2;
+	return ret;
 }
 
-static int venc_queue_setup(struct vb2_queue *q, const void *parg,
+static int venc_queue_setup(struct vb2_queue *q,
 			    unsigned int *num_buffers, unsigned int *num_planes,
-			    unsigned int sizes[], void *alloc_ctxs[])
+			    unsigned int sizes[], struct device *alloc_devs[])
 {
 	struct venus_inst *inst = vb2_get_drv_priv(q);
 	unsigned int p, num, min = 4;
 	int ret = 0;
+
+	if (*num_planes) {
+		if (q->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE &&
+		    *num_planes != inst->fmt_out->num_planes)
+			return -EINVAL;
+
+		if (q->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE &&
+		    *num_planes != inst->fmt_cap->num_planes)
+			return -EINVAL;
+
+		if (q->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE &&
+		    sizes[0] < inst->input_buf_size)
+			return -EINVAL;
+
+		if (q->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE &&
+		    sizes[0] < inst->output_buf_size)
+			return -EINVAL;
+
+		return 0;
+	}
 
 	switch (q->type) {
 	case V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE:
@@ -797,16 +824,16 @@ static int venc_queue_setup(struct vb2_queue *q, const void *parg,
 		inst->num_input_bufs = *num_buffers;
 
 		for (p = 0; p < *num_planes; ++p)
-			sizes[p] = get_framesize_uncompressed(p,
-					inst->out_width, inst->out_height);
-		alloc_ctxs[0] = inst->alloc_ctx_out;
+			sizes[p] = get_framesize_uncompressed(p, inst->width,
+							      inst->height);
+		inst->input_buf_size = sizes[0];
 		break;
 	case V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE:
 		*num_planes = inst->fmt_cap->num_planes;
 		*num_buffers = max(*num_buffers, min);
 		inst->num_output_bufs = *num_buffers;
 		sizes[0] = get_framesize_compressed(inst->width, inst->height);
-		alloc_ctxs[0] = inst->alloc_ctx_cap;
+		inst->output_buf_size = sizes[0];
 		break;
 	default:
 		ret = -EINVAL;
@@ -846,7 +873,6 @@ static int venc_verify_conf(struct venus_inst *inst)
 static int venc_start_streaming(struct vb2_queue *q, unsigned int count)
 {
 	struct venus_inst *inst = vb2_get_drv_priv(q);
-	struct device *dev = inst->core->dev;
 	int ret;
 
 	mutex_lock(&inst->lock);
@@ -861,15 +887,14 @@ static int venc_start_streaming(struct vb2_queue *q, unsigned int count)
 		return 0;
 	}
 
-	inst->sequence = 0;
+	helper_init_instance(inst);
 
-	ret = pm_runtime_get_sync(dev);
-	if (ret < 0)
-		return ret;
+	inst->sequence_cap = 0;
+	inst->sequence_out = 0;
 
 	ret = venc_init_session(inst);
 	if (ret)
-		goto put_sync;
+		goto bufs_done;
 
 	ret = venc_set_properties(inst);
 	if (ret)
@@ -894,8 +919,7 @@ static int venc_start_streaming(struct vb2_queue *q, unsigned int count)
 
 deinit_sess:
 	hfi_session_deinit(inst);
-put_sync:
-	pm_runtime_put_sync(dev);
+bufs_done:
 	helper_buffers_done(inst, VB2_BUF_STATE_QUEUED);
 	if (q->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
 		inst->streamon_out = 0;
@@ -916,7 +940,7 @@ static const struct vb2_ops venc_vb2_ops = {
 
 static void venc_buf_done(struct venus_inst *inst, unsigned int buf_type,
 			  u32 tag, u32 bytesused, u32 data_offset, u32 flags,
-			  u64 timestamp_us)
+			  u32 hfi_flags, u64 timestamp_us)
 {
 	struct vb2_v4l2_buffer *vbuf;
 	struct vb2_buffer *vb;
@@ -938,8 +962,10 @@ static void venc_buf_done(struct venus_inst *inst, unsigned int buf_type,
 	vbuf->flags = flags;
 
 	if (type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
-		vbuf->timestamp = ns_to_timeval(timestamp_us * NSEC_PER_USEC);
-		vbuf->sequence = inst->sequence++;
+		vb->timestamp = timestamp_us * NSEC_PER_USEC;
+		vbuf->sequence = inst->sequence_cap++;
+	} else {
+		vbuf->sequence = inst->sequence_out++;
 	}
 
 	v4l2_m2m_buf_done(vbuf, VB2_BUF_STATE_DONE);
@@ -948,11 +974,11 @@ static void venc_buf_done(struct venus_inst *inst, unsigned int buf_type,
 static void venc_event_notify(struct venus_inst *inst, u32 event,
 			      struct hfi_event_data *data)
 {
-	struct device *dev = inst->core->dev;
+	struct device *dev = inst->core->dev_enc;
 
 	if (event == EVT_SESSION_ERROR) {
 		inst->session_error = true;
-		dev_err(dev, "enc: event session error %x)\n", inst->error);
+		dev_err(dev, "enc: event session error %x\n", inst->error);
 	}
 }
 
@@ -980,6 +1006,8 @@ static int m2m_queue_init(void *priv, struct vb2_queue *src_vq,
 	src_vq->drv_priv = inst;
 	src_vq->buf_struct_size = sizeof(struct venus_buffer);
 	src_vq->allow_zero_bytesused = 1;
+	src_vq->min_buffers_needed = 1;
+	src_vq->dev = inst->core->dev;
 	ret = vb2_queue_init(src_vq);
 	if (ret)
 		return ret;
@@ -993,6 +1021,7 @@ static int m2m_queue_init(void *priv, struct vb2_queue *src_vq,
 	dst_vq->buf_struct_size = sizeof(struct venus_buffer);
 	dst_vq->allow_zero_bytesused = 1;
 	dst_vq->min_buffers_needed = 1;
+	dst_vq->dev = inst->core->dev;
 	ret = vb2_queue_init(dst_vq);
 	if (ret) {
 		vb2_queue_release(src_vq);
@@ -1008,65 +1037,56 @@ static void venc_inst_init(struct venus_inst *inst)
 	inst->fmt_out = &venc_formats[0];
 	inst->width = 1280;
 	inst->height = ALIGN(720, 32);
+	inst->out_width = 1280;
+	inst->out_height = 720;
 	inst->fps = 15;
 	inst->timeperframe.numerator = 1;
 	inst->timeperframe.denominator = 15;
 
-	inst->cap_width.min = 64;
+	inst->cap_width.min = 96;
 	inst->cap_width.max = 1920;
-	inst->cap_width.step_size = 1;
+	if (inst->core->res->hfi_version == HFI_VERSION_3XX)
+		inst->cap_width.max = 3840;
+	inst->cap_width.step_size = 2;
 	inst->cap_height.min = 64;
 	inst->cap_height.max = ALIGN(1080, 32);
-	inst->cap_height.step_size = 1;
+	if (inst->core->res->hfi_version == HFI_VERSION_3XX)
+		inst->cap_height.max = ALIGN(2160, 32);
+	inst->cap_height.step_size = 2;
 	inst->cap_framerate.min = 1;
 	inst->cap_framerate.max = 30;
 	inst->cap_framerate.step_size = 1;
-	inst->cap_mbs_per_frame.min = 16;
+	inst->cap_mbs_per_frame.min = 24;
 	inst->cap_mbs_per_frame.max = 8160;
 }
 
-int venc_init(struct venus_core *core, struct video_device *enc,
-	      const struct v4l2_file_operations *fops)
+static int venc_open(struct file *file)
 {
+	struct venus_core *core = video_drvdata(file);
+	struct venus_inst *inst;
 	int ret;
 
-	enc->release = video_device_release;
-	enc->fops = fops;
-	enc->ioctl_ops = &venc_ioctl_ops;
-	enc->vfl_dir = VFL_DIR_M2M;
-	enc->v4l2_dev = &core->v4l2_dev;
-
-	ret = video_register_device(enc, VFL_TYPE_GRABBER, -1);
-	if (ret)
-		return ret;
-
-	video_set_drvdata(enc, core);
-
-	return 0;
-}
-
-void venc_deinit(struct venus_core *core, struct video_device *enc)
-{
-	video_unregister_device(enc);
-}
-
-int venc_open(struct venus_inst *inst)
-{
-	int ret;
-
-	inst->alloc_ctx_cap = vb2_dma_sg_init_ctx(inst->core->dev);
-	if (!inst->alloc_ctx_cap)
+	inst = kzalloc(sizeof(*inst), GFP_KERNEL);
+	if (!inst)
 		return -ENOMEM;
 
-	inst->alloc_ctx_out = vb2_dma_sg_init_ctx(inst->core->dev);
-	if (!inst->alloc_ctx_out) {
-		vb2_dma_sg_cleanup_ctx(inst->alloc_ctx_cap);
-		return -ENOMEM;
-	}
+	INIT_LIST_HEAD(&inst->registeredbufs);
+	INIT_LIST_HEAD(&inst->internalbufs);
+	INIT_LIST_HEAD(&inst->list);
+	mutex_init(&inst->lock);
+
+	inst->core = core;
+	inst->session_type = VIDC_SESSION_TYPE_ENC;
+
+	helper_init_instance(inst);
+
+	ret = pm_runtime_get_sync(core->dev_enc);
+	if (ret < 0)
+		goto err_free_inst;
 
 	ret = venc_ctrl_init(inst);
 	if (ret)
-		goto err_alloc_ctx;
+		goto err_put_sync;
 
 	ret = hfi_session_create(inst, &venc_hfi_ops);
 	if (ret)
@@ -1090,6 +1110,13 @@ int venc_open(struct venus_inst *inst)
 		goto err_m2m_release;
 	}
 
+	v4l2_fh_init(&inst->fh, core->vdev_enc);
+
+	inst->fh.ctrl_handler = &inst->ctrl_handler;
+	v4l2_fh_add(&inst->fh);
+	inst->fh.m2m_ctx = inst->m2m_ctx;
+	file->private_data = &inst->fh;
+
 	return 0;
 
 err_m2m_release:
@@ -1098,18 +1125,157 @@ err_session_destroy:
 	hfi_session_destroy(inst);
 err_ctrl_deinit:
 	venc_ctrl_deinit(inst);
-err_alloc_ctx:
-	vb2_dma_sg_cleanup_ctx(inst->alloc_ctx_cap);
-	vb2_dma_sg_cleanup_ctx(inst->alloc_ctx_out);
+err_put_sync:
+	pm_runtime_put_sync(core->dev_enc);
+err_free_inst:
+	kfree(inst);
 	return ret;
 }
 
-void venc_close(struct venus_inst *inst)
+static int venc_close(struct file *file)
 {
+	struct venus_inst *inst = to_inst(file);
+
 	v4l2_m2m_ctx_release(inst->m2m_ctx);
 	v4l2_m2m_release(inst->m2m_dev);
 	venc_ctrl_deinit(inst);
 	hfi_session_destroy(inst);
-	vb2_dma_sg_cleanup_ctx(inst->alloc_ctx_cap);
-	vb2_dma_sg_cleanup_ctx(inst->alloc_ctx_out);
+	mutex_destroy(&inst->lock);
+	v4l2_fh_del(&inst->fh);
+	v4l2_fh_exit(&inst->fh);
+	kfree(inst);
+
+	pm_runtime_put_sync(inst->core->dev_enc);
+
+	return 0;
 }
+
+static const struct v4l2_file_operations venc_fops = {
+	.owner = THIS_MODULE,
+	.open = venc_open,
+	.release = venc_close,
+	.unlocked_ioctl = video_ioctl2,
+	.poll = v4l2_m2m_fop_poll,
+	.mmap = v4l2_m2m_fop_mmap,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl32 = v4l2_compat_ioctl32,
+#endif
+};
+
+static int venc_probe(struct platform_device *pdev)
+{
+	struct device *dev = &pdev->dev;
+	struct video_device *vdev;
+	struct venus_core *core;
+	int ret;
+
+	if (!dev->parent)
+		return -EPROBE_DEFER;
+
+	core = dev_get_drvdata(dev->parent);
+	if (!core)
+		return -EPROBE_DEFER;
+
+	if (core->res->hfi_version == HFI_VERSION_3XX) {
+		core->core1_clk = devm_clk_get(dev, "core");
+		if (IS_ERR(core->core1_clk))
+			return PTR_ERR(core->core1_clk);
+	}
+
+	platform_set_drvdata(pdev, core);
+
+	vdev = video_device_alloc();
+	if (!vdev)
+		return -ENOMEM;
+
+	vdev->release = video_device_release;
+	vdev->fops = &venc_fops;
+	vdev->ioctl_ops = &venc_ioctl_ops;
+	vdev->vfl_dir = VFL_DIR_M2M;
+	vdev->v4l2_dev = &core->v4l2_dev;
+	vdev->device_caps = V4L2_CAP_VIDEO_M2M_MPLANE | V4L2_CAP_STREAMING;
+
+	ret = video_register_device(vdev, VFL_TYPE_GRABBER, -1);
+	if (ret)
+		goto err_vdev_release;
+
+	core->vdev_enc = vdev;
+	core->dev_enc = dev;
+
+	video_set_drvdata(vdev, core);
+	pm_runtime_enable(dev);
+
+	return 0;
+
+err_vdev_release:
+	video_device_release(vdev);
+	return ret;
+}
+
+static int venc_remove(struct platform_device *pdev)
+{
+	struct venus_core *core = dev_get_drvdata(pdev->dev.parent);
+
+	video_unregister_device(core->vdev_enc);
+	pm_runtime_disable(core->dev_enc);
+
+	return 0;
+}
+
+#ifdef CONFIG_PM
+static int venc_runtime_suspend(struct device *dev)
+{
+	struct venus_core *core = dev_get_drvdata(dev);
+
+	if (core->res->hfi_version == HFI_VERSION_LEGACY)
+		return 0;
+
+	writel(0, core->base + WRAPPER_VENC_VCODEC_POWER_CONTROL);
+	clk_disable_unprepare(core->core1_clk);
+	writel(1, core->base + WRAPPER_VENC_VCODEC_POWER_CONTROL);
+
+	return 0;
+}
+
+static int venc_runtime_resume(struct device *dev)
+{
+	struct venus_core *core = dev_get_drvdata(dev);
+	int ret;
+
+	if (core->res->hfi_version == HFI_VERSION_LEGACY)
+		return 0;
+
+	writel(0, core->base + WRAPPER_VENC_VCODEC_POWER_CONTROL);
+	ret = clk_prepare_enable(core->core1_clk);
+	writel(1, core->base + WRAPPER_VENC_VCODEC_POWER_CONTROL);
+
+	return ret;
+}
+#endif
+
+static const struct dev_pm_ops venc_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(pm_runtime_force_suspend,
+				pm_runtime_force_resume)
+	SET_RUNTIME_PM_OPS(venc_runtime_suspend, venc_runtime_resume, NULL)
+};
+
+static const struct of_device_id venc_dt_match[] = {
+	{ .compatible = "venus-encoder" },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, venc_dt_match);
+
+static struct platform_driver qcom_venus_enc_driver = {
+	.probe = venc_probe,
+	.remove = venc_remove,
+	.driver = {
+		.name = "qcom-venus-encoder",
+		.of_match_table = venc_dt_match,
+		.pm = &venc_pm_ops,
+	},
+};
+module_platform_driver(qcom_venus_enc_driver);
+
+MODULE_ALIAS("platform:qcom-venus-encoder");
+MODULE_DESCRIPTION("Qualcomm Venus video encoder driver");
+MODULE_LICENSE("GPL v2");

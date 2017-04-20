@@ -99,8 +99,6 @@ struct vfe_device {
 	int stream_count;
 	spinlock_t output_lock;
 	enum vfe_line_id wm_output_map[MSM_VFE_IMAGE_MASTERS_NUM];
-	struct msm_bus_scale_pdata *bus_scale_table;
-	uint32_t bus_client;
 	struct vfe_line line[MSM_VFE_LINE_NUM];
 	u32 reg_update;
 	u8 was_streaming;
@@ -117,5 +115,7 @@ void msm_vfe_unregister_entities(struct vfe_device *vfe);
 
 void msm_vfe_get_vfe_id(struct media_entity *entity, u8 *id);
 void msm_vfe_get_vfe_line_id(struct media_entity *entity, enum vfe_line_id *id);
+
+void msm_vfe_stop_streaming(struct vfe_device *vfe);
 
 #endif /* QC_MSM_CAMSS_VFE_H */

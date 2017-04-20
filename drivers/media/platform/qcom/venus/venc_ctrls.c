@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- * Copyright (C) 2016 Linaro Ltd.
+ * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2017 Linaro Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -48,13 +48,19 @@ static int venc_op_s_ctrl(struct v4l2_ctrl *ctrl)
 		ctr->h264_entropy_mode = ctrl->val;
 		break;
 	case V4L2_CID_MPEG_VIDEO_MPEG4_PROFILE:
+		ctr->profile.mpeg4 = ctrl->val;
+		break;
 	case V4L2_CID_MPEG_VIDEO_H264_PROFILE:
+		ctr->profile.h264 = ctrl->val;
+		break;
 	case V4L2_CID_MPEG_VIDEO_VPX_PROFILE:
-		ctr->profile = ctrl->val;
+		ctr->profile.vpx = ctrl->val;
 		break;
 	case V4L2_CID_MPEG_VIDEO_MPEG4_LEVEL:
+		ctr->level.mpeg4 = ctrl->val;
+		break;
 	case V4L2_CID_MPEG_VIDEO_H264_LEVEL:
-		ctr->level = ctrl->val;
+		ctr->level.h264 = ctrl->val;
 		break;
 	case V4L2_CID_MPEG_VIDEO_H264_I_FRAME_QP:
 		ctr->h264_i_qp = ctrl->val;
@@ -244,12 +250,17 @@ int venc_ctrl_init(struct venus_inst *inst)
 		V4L2_CID_MPEG_VIDEO_H264_I_PERIOD, 0, (1 << 16) - 1, 1, 0);
 
 	ret = inst->ctrl_handler.error;
-	if (ret) {
-		v4l2_ctrl_handler_free(&inst->ctrl_handler);
-		return ret;
-	}
+	if (ret)
+		goto err;
+
+	ret = v4l2_ctrl_handler_setup(&inst->ctrl_handler);
+	if (ret)
+		goto err;
 
 	return 0;
+err:
+	v4l2_ctrl_handler_free(&inst->ctrl_handler);
+	return ret;
 }
 
 void venc_ctrl_deinit(struct venus_inst *inst)

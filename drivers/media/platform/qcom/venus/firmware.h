@@ -1,5 +1,4 @@
 /*
- * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  * Copyright (C) 2017 Linaro Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -12,12 +11,12 @@
  * GNU General Public License for more details.
  *
  */
-#ifndef __VENUS_VDEC_H__
-#define __VENUS_VDEC_H__
+#ifndef __VENUS_FIRMWARE_H__
+#define __VENUS_FIRMWARE_H__
 
-struct venus_inst;
+struct device;
 
-int vdec_ctrl_init(struct venus_inst *inst);
-void vdec_ctrl_deinit(struct venus_inst *inst);
+int venus_boot(struct device *parent, struct device *fw_dev);
+int venus_shutdown(struct device *fw_dev);
 
 #endif

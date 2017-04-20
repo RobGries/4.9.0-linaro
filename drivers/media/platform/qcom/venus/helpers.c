@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- * Copyright (C) 2016 Linaro Ltd.
+ * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2017 Linaro Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -19,6 +19,7 @@
 #include <linux/slab.h>
 #include <media/videobuf2-dma-sg.h>
 #include <media/v4l2-mem2mem.h>
+#include <asm/div64.h>
 
 #include "core.h"
 #include "helpers.h"
@@ -30,7 +31,7 @@ struct intbuf {
 	size_t size;
 	void *va;
 	dma_addr_t da;
-	struct dma_attrs attrs;
+	unsigned long attrs;
 };
 
 static int intbufs_set_buffer(struct venus_inst *inst, u32 type)
@@ -59,11 +60,10 @@ static int intbufs_set_buffer(struct venus_inst *inst, u32 type)
 
 		buf->type = bufreq.type;
 		buf->size = bufreq.size;
-		init_dma_attrs(&buf->attrs);
-		dma_set_attr(DMA_ATTR_WRITE_COMBINE, &buf->attrs);
-		dma_set_attr(DMA_ATTR_NO_KERNEL_MAPPING, &buf->attrs);
+		buf->attrs = DMA_ATTR_WRITE_COMBINE |
+			     DMA_ATTR_NO_KERNEL_MAPPING;
 		buf->va = dma_alloc_attrs(dev, buf->size, &buf->da, GFP_KERNEL,
-					  &buf->attrs);
+					  buf->attrs);
 		if (!buf->va) {
 			ret = -ENOMEM;
 			goto fail;
@@ -87,7 +87,7 @@ static int intbufs_set_buffer(struct venus_inst *inst, u32 type)
 	return 0;
 
 dma_free:
-	dma_free_attrs(dev, buf->size, buf->va, buf->da, &buf->attrs);
+	dma_free_attrs(dev, buf->size, buf->va, buf->da, buf->attrs);
 fail:
 	kfree(buf);
 	return ret;
@@ -108,9 +108,9 @@ static int intbufs_unset_buffers(struct venus_inst *inst)
 
 		ret = hfi_session_unset_buffers(inst, &bd);
 
-		list_del(&buf->list);
+		list_del_init(&buf->list);
 		dma_free_attrs(inst->core->dev, buf->size, buf->va, buf->da,
-			       &buf->attrs);
+			       buf->attrs);
 		kfree(buf);
 	}
 
@@ -193,11 +193,9 @@ static int load_scale_clocks(struct venus_core *core)
 	mbs_per_sec = load_per_type(core, VIDC_SESSION_TYPE_ENC) +
 		      load_per_type(core, VIDC_SESSION_TYPE_DEC);
 
-	if (mbs_per_sec > core->res->max_load) {
+	if (mbs_per_sec > core->res->max_load)
 		dev_warn(dev, "HW is overloaded, needed: %d max: %d\n",
 			 mbs_per_sec, core->res->max_load);
-		return -EBUSY;
-	}
 
 	if (!mbs_per_sec && num_rows > 1) {
 		freq = table[num_rows - 1].freq;
@@ -212,7 +210,14 @@ static int load_scale_clocks(struct venus_core *core)
 
 set_freq:
 
-	ret = clk_set_rate(clk, freq);
+	if (core->res->hfi_version == HFI_VERSION_3XX) {
+		ret = clk_set_rate(clk, freq);
+		ret |= clk_set_rate(core->core0_clk, freq);
+		ret |= clk_set_rate(core->core1_clk, freq);
+	} else {
+		ret = clk_set_rate(clk, freq);
+	}
+
 	if (ret) {
 		dev_err(dev, "failed to set clock rate %lu (%d)\n", freq, ret);
 		return ret;
@@ -238,9 +243,9 @@ static void return_buf_error(struct venus_inst *inst,
 	struct v4l2_m2m_ctx *m2m_ctx = inst->m2m_ctx;
 
 	if (vbuf->vb2_buf.type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
-		v4l2_m2m_src_buf_remove_exact(m2m_ctx, vbuf);
+		v4l2_m2m_src_buf_remove_by_buf(m2m_ctx, vbuf);
 	else
-		v4l2_m2m_dst_buf_remove_exact(m2m_ctx, vbuf);
+		v4l2_m2m_src_buf_remove_by_buf(m2m_ctx, vbuf);
 
 	v4l2_m2m_buf_done(vbuf, VB2_BUF_STATE_ERROR);
 }
@@ -250,8 +255,6 @@ session_process_buf(struct venus_inst *inst, struct vb2_v4l2_buffer *vbuf)
 {
 	struct venus_buffer *buf = to_venus_buffer(vbuf);
 	struct vb2_buffer *vb = &vbuf->vb2_buf;
-	struct venus_core *core = inst->core;
-	struct device *dev = core->dev;
 	unsigned int type = vb->type;
 	struct hfi_frame_data fdata;
 	int ret;
@@ -259,9 +262,13 @@ session_process_buf(struct venus_inst *inst, struct vb2_v4l2_buffer *vbuf)
 	memset(&fdata, 0, sizeof(fdata));
 	fdata.alloc_len = buf->size;
 	fdata.device_addr = buf->dma_addr;
-	fdata.timestamp = timeval_to_ns(&vbuf->timestamp) / NSEC_PER_USEC;
+	fdata.timestamp = vb->timestamp;
+	do_div(fdata.timestamp, NSEC_PER_USEC);
 	fdata.flags = 0;
 	fdata.clnt_data = vbuf->vb2_buf.index;
+
+	if (!fdata.timestamp)
+		fdata.flags |= HFI_BUFFERFLAG_TIMESTAMPINVALID;
 
 	if (type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) {
 		fdata.buffer_type = HFI_BUFFER_INPUT;
@@ -270,49 +277,46 @@ session_process_buf(struct venus_inst *inst, struct vb2_v4l2_buffer *vbuf)
 
 		if (vbuf->flags & V4L2_BUF_FLAG_LAST || !fdata.filled_len)
 			fdata.flags |= HFI_BUFFERFLAG_EOS;
-
-		if (inst->codec_cfg == false &&
-		    inst->session_type == VIDC_SESSION_TYPE_DEC) {
-			inst->codec_cfg = true;
-			fdata.flags |= HFI_BUFFERFLAG_CODECCONFIG;
-		}
 	} else if (type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
 		fdata.buffer_type = HFI_BUFFER_OUTPUT;
 		fdata.filled_len = 0;
 		fdata.offset = 0;
-
-	} else {
-		dev_err(dev, "process buffer invalid type\n");
-		return -EINVAL;
 	}
 
 	ret = hfi_session_process_buf(inst, &fdata);
-	if (ret) {
-		dev_err(dev, "process buffer failed (%d)\n", ret);
+	if (ret)
 		return ret;
-	}
 
 	return 0;
 }
 
+static inline int is_reg_unreg_needed(struct venus_inst *inst)
+{
+	if (inst->session_type == VIDC_SESSION_TYPE_DEC &&
+	    inst->core->res->hfi_version == HFI_VERSION_3XX)
+		return 0;
+
+	if (inst->session_type == VIDC_SESSION_TYPE_DEC &&
+	    inst->cap_bufs_mode_dynamic &&
+	    inst->core->res->hfi_version == HFI_VERSION_LEGACY)
+		return 0;
+
+	return 1;
+}
+
 static int session_unregister_bufs(struct venus_inst *inst)
 {
-	struct venus_core *core = inst->core;
-	struct device *dev = core->dev;
-	struct hfi_buffer_desc bd;
 	struct venus_buffer *buf, *n;
-	int ret;
+	struct hfi_buffer_desc bd;
+	int ret = 0;
 
-	if (core->res->hfi_version == HFI_VERSION_3XX)
+	if (!is_reg_unreg_needed(inst))
 		return 0;
 
 	list_for_each_entry_safe(buf, n, &inst->registeredbufs, reg_list) {
 		fill_buffer_desc(buf, &bd, true);
 		ret = hfi_session_unset_buffers(inst, &bd);
-		if (ret)
-			dev_err(dev, "%s: unset buffers failed\n", __func__);
-
-		list_del(&buf->reg_list);
+		list_del_init(&buf->reg_list);
 	}
 
 	return ret;
@@ -326,15 +330,14 @@ static int session_register_bufs(struct venus_inst *inst)
 	struct venus_buffer *buf;
 	int ret = 0;
 
-	if (core->res->hfi_version == HFI_VERSION_3XX)
+	if (!is_reg_unreg_needed(inst))
 		return 0;
 
 	list_for_each_entry(buf, &inst->registeredbufs, reg_list) {
 		fill_buffer_desc(buf, &bd, false);
 		ret = hfi_session_set_buffers(inst, &bd);
 		if (ret) {
-			dev_err(dev, "%s: session: set buffer failed\n",
-				__func__);
+			dev_err(dev, "%s: set buffer failed\n", __func__);
 			break;
 		}
 	}
@@ -370,6 +373,7 @@ int helper_get_bufreq(struct venus_inst *inst, u32 type,
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(helper_get_bufreq);
 
 int helper_set_input_resolution(struct venus_inst *inst, unsigned int width,
 				unsigned int height)
@@ -383,6 +387,7 @@ int helper_set_input_resolution(struct venus_inst *inst, unsigned int width,
 
 	return hfi_session_set_property(inst, ptype, &fs);
 }
+EXPORT_SYMBOL_GPL(helper_set_input_resolution);
 
 int helper_set_output_resolution(struct venus_inst *inst, unsigned int width,
 				 unsigned int height)
@@ -396,6 +401,7 @@ int helper_set_output_resolution(struct venus_inst *inst, unsigned int width,
 
 	return hfi_session_set_property(inst, ptype, &fs);
 }
+EXPORT_SYMBOL_GPL(helper_set_output_resolution);
 
 int helper_set_num_bufs(struct venus_inst *inst, unsigned int input_bufs,
 			unsigned int output_bufs)
@@ -416,6 +422,7 @@ int helper_set_num_bufs(struct venus_inst *inst, unsigned int input_bufs,
 
 	return hfi_session_set_property(inst, ptype, &buf_count);
 }
+EXPORT_SYMBOL_GPL(helper_set_num_bufs);
 
 int helper_set_color_format(struct venus_inst *inst, u32 pixfmt)
 {
@@ -447,6 +454,69 @@ int helper_set_color_format(struct venus_inst *inst, u32 pixfmt)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(helper_set_color_format);
+
+static void delayed_process_buf_func(struct work_struct *work)
+{
+	struct venus_buffer *buf, *n;
+	struct venus_inst *inst;
+	int ret;
+
+	inst = container_of(work, struct venus_inst, delayed_process_work);
+
+	mutex_lock(&inst->lock);
+
+	if (!(inst->streamon_out & inst->streamon_cap))
+		goto unlock;
+
+	list_for_each_entry_safe(buf, n, &inst->delayed_process, ref_list) {
+		if (buf->flags & HFI_BUFFERFLAG_READONLY)
+			continue;
+
+		ret = session_process_buf(inst, &buf->vb);
+		if (ret)
+			return_buf_error(inst, &buf->vb);
+
+		list_del_init(&buf->ref_list);
+	}
+unlock:
+	mutex_unlock(&inst->lock);
+}
+
+void helper_release_buf_ref(struct venus_inst *inst, unsigned int idx)
+{
+	struct venus_buffer *buf;
+
+	list_for_each_entry(buf, &inst->registeredbufs, reg_list) {
+		if (buf->vb.vb2_buf.index == idx) {
+			buf->flags &= ~HFI_BUFFERFLAG_READONLY;
+			schedule_work(&inst->delayed_process_work);
+			break;
+		}
+	}
+}
+EXPORT_SYMBOL_GPL(helper_release_buf_ref);
+
+void helper_acquire_buf_ref(struct vb2_v4l2_buffer *vbuf)
+{
+	struct venus_buffer *buf = to_venus_buffer(vbuf);
+
+	buf->flags |= HFI_BUFFERFLAG_READONLY;
+}
+EXPORT_SYMBOL_GPL(helper_acquire_buf_ref);
+
+static int is_buf_refed(struct venus_inst *inst, struct vb2_v4l2_buffer *vbuf)
+{
+	struct venus_buffer *buf = to_venus_buffer(vbuf);
+
+	if (buf->flags & HFI_BUFFERFLAG_READONLY) {
+		list_add_tail(&buf->ref_list, &inst->delayed_process);
+		schedule_work(&inst->delayed_process_work);
+		return 1;
+	}
+
+	return 0;
+}
 
 struct vb2_v4l2_buffer *
 helper_find_buf(struct venus_inst *inst, unsigned int type, u32 idx)
@@ -458,6 +528,7 @@ helper_find_buf(struct venus_inst *inst, unsigned int type, u32 idx)
 	else
 		return v4l2_m2m_dst_buf_remove_by_idx(m2m_ctx, idx);
 }
+EXPORT_SYMBOL_GPL(helper_find_buf);
 
 int helper_vb2_buf_init(struct vb2_buffer *vb)
 {
@@ -478,6 +549,7 @@ int helper_vb2_buf_init(struct vb2_buffer *vb)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(helper_vb2_buf_init);
 
 int helper_vb2_buf_prepare(struct vb2_buffer *vb)
 {
@@ -486,11 +558,13 @@ int helper_vb2_buf_prepare(struct vb2_buffer *vb)
 	if (vb->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE &&
 	    vb2_plane_size(vb, 0) < inst->output_buf_size)
 		return -EINVAL;
-	else if (vb2_plane_size(vb, 0) < inst->input_buf_size)
+	if (vb->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE &&
+	    vb2_plane_size(vb, 0) < inst->input_buf_size)
 		return -EINVAL;
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(helper_vb2_buf_prepare);
 
 void helper_vb2_buf_queue(struct vb2_buffer *vb)
 {
@@ -506,6 +580,10 @@ void helper_vb2_buf_queue(struct vb2_buffer *vb)
 	if (!(inst->streamon_out & inst->streamon_cap))
 		goto unlock;
 
+	ret = is_buf_refed(inst, vbuf);
+	if (ret)
+		goto unlock;
+
 	ret = session_process_buf(inst, vbuf);
 	if (ret)
 		return_buf_error(inst, vbuf);
@@ -513,6 +591,7 @@ void helper_vb2_buf_queue(struct vb2_buffer *vb)
 unlock:
 	mutex_unlock(&inst->lock);
 }
+EXPORT_SYMBOL_GPL(helper_vb2_buf_queue);
 
 void helper_buffers_done(struct venus_inst *inst, enum vb2_buffer_state state)
 {
@@ -523,45 +602,42 @@ void helper_buffers_done(struct venus_inst *inst, enum vb2_buffer_state state)
 	while ((buf = v4l2_m2m_dst_buf_remove(inst->m2m_ctx)))
 		v4l2_m2m_buf_done(buf, state);
 }
+EXPORT_SYMBOL_GPL(helper_buffers_done);
 
 void helper_vb2_stop_streaming(struct vb2_queue *q)
 {
 	struct venus_inst *inst = vb2_get_drv_priv(q);
 	struct venus_core *core = inst->core;
-	struct device *dev = core->dev;
 	int ret;
 
 	mutex_lock(&inst->lock);
 
-	if (!(inst->streamon_out & inst->streamon_cap)) {
-		mutex_unlock(&inst->lock);
-		return;
+	if (inst->streamon_out & inst->streamon_cap) {
+		ret = hfi_session_stop(inst);
+		ret |= hfi_session_unload_res(inst);
+		ret |= session_unregister_bufs(inst);
+		ret |= intbufs_free(inst);
+		ret |= hfi_session_deinit(inst);
+
+		if (inst->session_error || core->sys_error)
+			ret = -EIO;
+
+		if (ret)
+			hfi_session_abort(inst);
+
+		load_scale_clocks(core);
 	}
 
-	ret = hfi_session_stop(inst);
-
-	ret |= hfi_session_unload_res(inst);
-
-	ret |= session_unregister_bufs(inst);
-
-	ret |= intbufs_free(inst);
-
-	ret |= hfi_session_deinit(inst);
-
-	if (inst->session_error || core->sys_error)
-		ret = -EIO;
-
-	if (ret) {
-		dev_err(dev, "aborting the session %d\n", ret);
-		hfi_session_abort(inst);
-	}
-
-	load_scale_clocks(core);
-	pm_runtime_put_sync(dev);
 	helper_buffers_done(inst, VB2_BUF_STATE_ERROR);
-	inst->streamon_cap = inst->streamon_out = 0;
+
+	if (q->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
+		inst->streamon_out = 0;
+	else
+		inst->streamon_cap = 0;
+
 	mutex_unlock(&inst->lock);
 }
+EXPORT_SYMBOL_GPL(helper_vb2_stop_streaming);
 
 int helper_vb2_start_streaming(struct venus_inst *inst)
 {
@@ -596,6 +672,7 @@ err_bufs_free:
 	intbufs_free(inst);
 	return ret;
 }
+EXPORT_SYMBOL_GPL(helper_vb2_start_streaming);
 
 void helper_m2m_device_run(void *priv)
 {
@@ -620,6 +697,7 @@ void helper_m2m_device_run(void *priv)
 
 	mutex_unlock(&inst->lock);
 }
+EXPORT_SYMBOL_GPL(helper_m2m_device_run);
 
 void helper_m2m_job_abort(void *priv)
 {
@@ -627,3 +705,14 @@ void helper_m2m_job_abort(void *priv)
 
 	v4l2_m2m_job_finish(inst->m2m_dev, inst->m2m_ctx);
 }
+EXPORT_SYMBOL_GPL(helper_m2m_job_abort);
+
+void helper_init_instance(struct venus_inst *inst)
+{
+	if (inst->session_type == VIDC_SESSION_TYPE_DEC) {
+		INIT_LIST_HEAD(&inst->delayed_process);
+		INIT_WORK(&inst->delayed_process_work,
+			  delayed_process_buf_func);
+	}
+}
+EXPORT_SYMBOL_GPL(helper_init_instance);

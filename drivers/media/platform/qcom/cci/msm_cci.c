@@ -81,16 +81,14 @@ static int msm_probe(struct platform_device *pdev,
 			sizeof(msm_v4l2_dev->mdev->model));
 	msm_v4l2_dev->mdev->dev = &(pdev->dev);
 
+	media_device_init(msm_v4l2_dev->mdev);
 	rc = media_device_register(msm_v4l2_dev->mdev);
 	if (WARN_ON(rc < 0))
 		goto media_fail;
 
-	if (WARN_ON((rc == media_entity_init(&pvdev->vdev->entity,
-			0, NULL, 0)) < 0))
+	if (WARN_ON((rc == media_entity_pads_init(&pvdev->vdev->entity,
+						  0, NULL)) < 0))
 		goto entity_fail;
-
-	pvdev->vdev->entity.type = MEDIA_ENT_T_DEVNODE_V4L;
-	pvdev->vdev->entity.group_id = 2;
 #endif
 
 //	msm_v4l2_dev->notify = msm_sd_notify;
@@ -141,7 +139,7 @@ register_fail:
 #if defined(CONFIG_MEDIA_CONTROLLER)
 	media_entity_cleanup(&pvdev->vdev->entity);
 entity_fail:
-	media_device_unregister(msm_v4l2_dev->mdev);
+	media_device_cleanup(msm_v4l2_dev->mdev);
 media_fail:
 	kzfree(msm_v4l2_dev->mdev);
 mdev_fail:

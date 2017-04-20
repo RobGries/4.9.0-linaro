@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- * Copyright (C) 2016 Linaro Ltd.
+ * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2017 Linaro Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -112,7 +112,7 @@ struct mem_desc {
 	dma_addr_t da;	/* device address */
 	void *kva;	/* kernel virtual address */
 	u32 size;
-	struct dma_attrs attrs;
+	unsigned long attrs;
 };
 
 struct iface_queue {
@@ -132,6 +132,7 @@ struct venus_hfi_device {
 	bool power_enabled;
 	bool suspended;
 	enum venus_state state;
+	/* serialize read / write to the shared memory */
 	struct mutex lock;
 	struct completion pwr_collapse_prep;
 	struct completion release_resource;
@@ -236,7 +237,7 @@ static int venus_write_queue(struct venus_hfi_device *hdev,
 	qhdr->write_idx = new_wr_idx;
 	*rx_req = qhdr->rx_req ? 1 : 0;
 
-	/* make sure write index is updated before an interupt is raised */
+	/* make sure write index is updated before an interrupt is raised */
 	mb();
 
 	return 0;
@@ -340,12 +341,11 @@ static int venus_alloc(struct venus_hfi_device *hdev, struct mem_desc *desc,
 {
 	struct device *dev = hdev->core->dev;
 
-	init_dma_attrs(&desc->attrs);
-	dma_set_attr(DMA_ATTR_WRITE_COMBINE, &desc->attrs);
+	desc->attrs = DMA_ATTR_WRITE_COMBINE;
 	desc->size = ALIGN(size, SZ_4K);
 
 	desc->kva = dma_alloc_attrs(dev, size, &desc->da, GFP_KERNEL,
-				    &desc->attrs);
+				    desc->attrs);
 	if (!desc->kva)
 		return -ENOMEM;
 
@@ -356,7 +356,7 @@ static void venus_free(struct venus_hfi_device *hdev, struct mem_desc *mem)
 {
 	struct device *dev = hdev->core->dev;
 
-	dma_free_attrs(dev, mem->size, mem->kva, mem->da, &mem->attrs);
+	dma_free_attrs(dev, mem->size, mem->kva, mem->da, mem->attrs);
 }
 
 static void venus_writel(struct venus_hfi_device *hdev, u32 reg, u32 value)
@@ -394,10 +394,8 @@ static int venus_iface_cmdq_write_nolock(struct venus_hfi_device *hdev,
 	u32 rx_req;
 	int ret;
 
-	if (!venus_is_valid_state(hdev)) {
-		dev_err(dev, "%s: fw not in init state\n", __func__);
+	if (!venus_is_valid_state(hdev))
 		return -EINVAL;
-	}
 
 	cmd_packet = (struct hfi_pkt_hdr *)pkt;
 	hdev->last_packet_type = cmd_packet->pkt_type;
@@ -438,7 +436,7 @@ static int venus_hfi_core_set_resource(struct venus_core *core, u32 id,
 	if (id == VIDC_RESOURCE_NONE)
 		return 0;
 
-	pkt = (struct hfi_sys_set_resource_pkt *) packet;
+	pkt = (struct hfi_sys_set_resource_pkt *)packet;
 
 	ret = pkt_sys_set_resource(pkt, id, size, addr, cookie);
 	if (ret)
@@ -449,11 +447,6 @@ static int venus_hfi_core_set_resource(struct venus_core *core, u32 id,
 		return ret;
 
 	return 0;
-}
-
-static int venus_tzbsp_set_video_state(enum tzbsp_video_state state)
-{
-	return qcom_scm_set_video_state(state, 0);
 }
 
 static int venus_boot_core(struct venus_hfi_device *hdev)
@@ -498,7 +491,7 @@ static u32 venus_hwversion(struct venus_hfi_device *hdev)
 	minor = minor >> WRAPPER_HW_VERSION_MINOR_VERSION_SHIFT;
 	step = ver & WRAPPER_HW_VERSION_STEP_VERSION_MASK;
 
-	dev_dbg(dev, "venus hw version %d.%d.%d\n", major, minor, step);
+	dev_dbg(dev, "venus hw version %x.%x.%x\n", major, minor, step);
 
 	return major;
 }
@@ -564,11 +557,11 @@ static int venus_power_off(struct venus_hfi_device *hdev)
 	if (!hdev->power_enabled)
 		return 0;
 
-	ret = venus_halt_axi(hdev);
+	ret = qcom_scm_set_remote_state(TZBSP_VIDEO_STATE_SUSPEND, 0);
 	if (ret)
 		return ret;
 
-	ret = venus_tzbsp_set_video_state(TZBSP_VIDEO_STATE_SUSPEND);
+	ret = venus_halt_axi(hdev);
 	if (ret)
 		return ret;
 
@@ -584,7 +577,7 @@ static int venus_power_on(struct venus_hfi_device *hdev)
 	if (hdev->power_enabled)
 		return 0;
 
-	ret = venus_tzbsp_set_video_state(TZBSP_VIDEO_STATE_RESUME);
+	ret = qcom_scm_set_remote_state(TZBSP_VIDEO_STATE_RESUME, 0);
 	if (ret)
 		goto err;
 
@@ -597,7 +590,7 @@ static int venus_power_on(struct venus_hfi_device *hdev)
 	return 0;
 
 err_suspend:
-	venus_tzbsp_set_video_state(TZBSP_VIDEO_STATE_SUSPEND);
+	qcom_scm_set_remote_state(TZBSP_VIDEO_STATE_SUSPEND, 0);
 err:
 	hdev->power_enabled = false;
 	return ret;
@@ -781,7 +774,7 @@ static int venus_sys_set_debug(struct venus_hfi_device *hdev, u32 debug)
 	u8 packet[IFACEQ_VAR_SMALL_PKT_SIZE];
 	int ret;
 
-	pkt = (struct hfi_sys_set_property_pkt *) packet;
+	pkt = (struct hfi_sys_set_property_pkt *)packet;
 
 	pkt_sys_debug_config(pkt, HFI_DEBUG_MODE_QUEUE, debug);
 
@@ -798,7 +791,7 @@ static int venus_sys_set_coverage(struct venus_hfi_device *hdev, u32 mode)
 	u8 packet[IFACEQ_VAR_SMALL_PKT_SIZE];
 	int ret;
 
-	pkt = (struct hfi_sys_set_property_pkt *) packet;
+	pkt = (struct hfi_sys_set_property_pkt *)packet;
 
 	pkt_sys_coverage_config(pkt, mode);
 
@@ -819,7 +812,7 @@ static int venus_sys_set_idle_message(struct venus_hfi_device *hdev,
 	if (!enable)
 		return 0;
 
-	pkt = (struct hfi_sys_set_property_pkt *) packet;
+	pkt = (struct hfi_sys_set_property_pkt *)packet;
 
 	pkt_sys_idle_indicator(pkt, enable);
 
@@ -837,7 +830,7 @@ static int venus_sys_set_power_control(struct venus_hfi_device *hdev,
 	u8 packet[IFACEQ_VAR_SMALL_PKT_SIZE];
 	int ret;
 
-	pkt = (struct hfi_sys_set_property_pkt *) packet;
+	pkt = (struct hfi_sys_set_property_pkt *)packet;
 
 	pkt_sys_power_control(pkt, enable);
 
@@ -888,15 +881,10 @@ static int venus_session_cmd(struct venus_inst *inst, u32 pkt_type)
 {
 	struct venus_hfi_device *hdev = to_hfi_priv(inst->core);
 	struct hfi_session_pkt pkt;
-	int ret;
 
 	pkt_session_cmd(&pkt, pkt_type, inst);
 
-	ret = venus_iface_cmdq_write(hdev, &pkt);
-	if (ret)
-		return ret;
-
-	return 0;
+	return venus_iface_cmdq_write(hdev, &pkt);
 }
 
 static void venus_flush_debug_queue(struct venus_hfi_device *hdev)
@@ -915,7 +903,8 @@ static void venus_flush_debug_queue(struct venus_hfi_device *hdev)
 	}
 }
 
-static int venus_prepare_power_collapse(struct venus_hfi_device *hdev)
+static int venus_prepare_power_collapse(struct venus_hfi_device *hdev,
+					bool wait)
 {
 	unsigned long timeout = msecs_to_jiffies(venus_hw_rsp_timeout);
 	struct hfi_sys_pc_prep_pkt pkt;
@@ -928,6 +917,9 @@ static int venus_prepare_power_collapse(struct venus_hfi_device *hdev)
 	ret = venus_iface_cmdq_write(hdev, &pkt);
 	if (ret)
 		return ret;
+
+	if (!wait)
+		return 0;
 
 	ret = wait_for_completion_timeout(&hdev->pwr_collapse_prep, timeout);
 	if (!ret) {
@@ -970,10 +962,10 @@ static void venus_sfr_print(struct venus_hfi_device *hdev)
 	 * SFR isn't guaranteed to be NULL terminated since SYS_ERROR indicates
 	 * that Venus is in the process of crashing.
 	 */
-	if (p == NULL)
+	if (!p)
 		sfr->data[sfr->buf_size - 1] = '\0';
 
-	dev_warn_ratelimited(dev, "SFR message from FW: %s\n", sfr->data);
+	dev_err_ratelimited(dev, "SFR message from FW: %s\n", sfr->data);
 }
 
 static void venus_process_msg_sys_error(struct venus_hfi_device *hdev,
@@ -1072,6 +1064,8 @@ static int venus_hfi_core_init(struct venus_core *core)
 
 	pkt_sys_init(&pkt, HFI_VIDEO_ARCH_OX);
 
+	venus_set_state(hdev, VENUS_STATE_INIT);
+
 	ret = venus_iface_cmdq_write(hdev, &pkt);
 	if (ret)
 		return ret;
@@ -1082,8 +1076,6 @@ static int venus_hfi_core_init(struct venus_core *core)
 	if (ret)
 		dev_warn(dev, "failed to send image version pkt to fw\n");
 
-	venus_set_state(hdev, VENUS_STATE_INIT);
-
 	return 0;
 }
 
@@ -1093,6 +1085,7 @@ static int venus_hfi_core_deinit(struct venus_core *core)
 
 	venus_set_state(hdev, VENUS_STATE_DEINIT);
 	hdev->suspended = true;
+	hdev->power_enabled = false;
 
 	return 0;
 }
@@ -1271,7 +1264,7 @@ static int venus_hfi_session_unset_buffers(struct venus_inst *inst,
 	if (bd->buffer_type == HFI_BUFFER_INPUT)
 		return 0;
 
-	pkt = (struct hfi_session_release_buffer_pkt *) packet;
+	pkt = (struct hfi_session_release_buffer_pkt *)packet;
 
 	ret = pkt_session_unset_buffers(pkt, inst, bd);
 	if (ret)
@@ -1298,7 +1291,7 @@ static int venus_hfi_session_parse_seq_hdr(struct venus_inst *inst,
 	u8 packet[IFACEQ_VAR_SMALL_PKT_SIZE];
 	int ret;
 
-	pkt = (struct hfi_session_parse_sequence_header_pkt *) packet;
+	pkt = (struct hfi_session_parse_sequence_header_pkt *)packet;
 
 	ret = pkt_session_parse_seq_header(pkt, inst, seq_hdr, seq_hdr_len);
 	if (ret)
@@ -1319,7 +1312,7 @@ static int venus_hfi_session_get_seq_hdr(struct venus_inst *inst,
 	u8 packet[IFACEQ_VAR_SMALL_PKT_SIZE];
 	int ret;
 
-	pkt = (struct hfi_session_get_sequence_header_pkt *) packet;
+	pkt = (struct hfi_session_get_sequence_header_pkt *)packet;
 
 	ret = pkt_session_get_seq_hdr(pkt, inst, seq_hdr, seq_hdr_len);
 	if (ret)
@@ -1336,7 +1329,7 @@ static int venus_hfi_session_set_property(struct venus_inst *inst, u32 ptype,
 	u8 packet[IFACEQ_VAR_LARGE_PKT_SIZE];
 	int ret;
 
-	pkt = (struct hfi_session_set_property_pkt *) packet;
+	pkt = (struct hfi_session_set_property_pkt *)packet;
 
 	ret = pkt_session_set_property(pkt, inst, ptype, pdata);
 	if (ret)
@@ -1365,7 +1358,7 @@ static int venus_hfi_resume(struct venus_core *core)
 
 	mutex_lock(&hdev->lock);
 
-	if (hdev->suspended == false)
+	if (!hdev->suspended)
 		goto unlock;
 
 	ret = venus_power_on(hdev);
@@ -1379,7 +1372,7 @@ unlock:
 	return ret;
 }
 
-static int venus_hfi_suspend(struct venus_core *core)
+static int venus_hfi_suspend_1xx(struct venus_core *core)
 {
 	struct venus_hfi_device *hdev = to_hfi_priv(core);
 	struct device *dev = core->dev;
@@ -1398,7 +1391,7 @@ static int venus_hfi_suspend(struct venus_core *core)
 		return -EINVAL;
 	}
 
-	ret = venus_prepare_power_collapse(hdev);
+	ret = venus_prepare_power_collapse(hdev, true);
 	if (ret) {
 		dev_err(dev, "prepare for power collapse fail (%d)\n", ret);
 		return ret;
@@ -1434,6 +1427,73 @@ static int venus_hfi_suspend(struct venus_core *core)
 	mutex_unlock(&hdev->lock);
 
 	return 0;
+}
+
+static int venus_hfi_suspend_3xx(struct venus_core *core)
+{
+	struct venus_hfi_device *hdev = to_hfi_priv(core);
+	struct device *dev = core->dev;
+	u32 ctrl_status, wfi_status;
+	int ret;
+	int cnt = 100;
+
+	if (!hdev->power_enabled || hdev->suspended)
+		return 0;
+
+	mutex_lock(&hdev->lock);
+	ret = venus_is_valid_state(hdev);
+	mutex_unlock(&hdev->lock);
+
+	if (!ret) {
+		dev_err(dev, "bad state, cannot suspend\n");
+		return -EINVAL;
+	}
+
+	ctrl_status = venus_readl(hdev, CPU_CS_SCIACMDARG0);
+	if (!(ctrl_status & CPU_CS_SCIACMDARG0_PC_READY)) {
+		wfi_status = venus_readl(hdev, WRAPPER_CPU_STATUS);
+		ctrl_status = venus_readl(hdev, CPU_CS_SCIACMDARG0);
+
+		ret = venus_prepare_power_collapse(hdev, false);
+		if (ret) {
+			dev_err(dev, "prepare for power collapse fail (%d)\n",
+				ret);
+			return ret;
+		}
+
+		cnt = 100;
+		while (cnt--) {
+			wfi_status = venus_readl(hdev, WRAPPER_CPU_STATUS);
+			ctrl_status = venus_readl(hdev, CPU_CS_SCIACMDARG0);
+			if (ctrl_status & CPU_CS_SCIACMDARG0_PC_READY &&
+			    wfi_status & BIT(0))
+				break;
+			usleep_range(1000, 1500);
+		}
+	}
+
+	mutex_lock(&hdev->lock);
+
+	ret = venus_power_off(hdev);
+	if (ret) {
+		dev_err(dev, "venus_power_off (%d)\n", ret);
+		mutex_unlock(&hdev->lock);
+		return ret;
+	}
+
+	hdev->suspended = true;
+
+	mutex_unlock(&hdev->lock);
+
+	return 0;
+}
+
+static int venus_hfi_suspend(struct venus_core *core)
+{
+	if (core->res->hfi_version == HFI_VERSION_3XX)
+		return venus_hfi_suspend_3xx(core);
+
+	return venus_hfi_suspend_1xx(core);
 }
 
 static const struct hfi_ops venus_hfi_ops = {
@@ -1474,6 +1534,8 @@ void venus_hfi_destroy(struct venus_core *core)
 	venus_interface_queues_release(hdev);
 	mutex_destroy(&hdev->lock);
 	kfree(hdev);
+	core->priv = NULL;
+	core->ops = NULL;
 }
 
 int venus_hfi_create(struct venus_core *core)

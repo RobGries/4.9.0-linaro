@@ -804,10 +804,12 @@ int msm_csid_subdev_init(struct csid_device *csid,
 
 	r = platform_get_resource_byname(pdev, IORESOURCE_IRQ,
 					 res->interrupt[0]);
-	csid->irq = r->start;
-	if (IS_ERR_VALUE(csid->irq))
-		return csid->irq;
+	if (!r) {
+		dev_err(dev, "missing IRQ\n");
+		return -EINVAL;
+	}
 
+	csid->irq = r->start;
 	snprintf(csid->irq_name, sizeof(csid->irq_name), "%s_%s%d",
 		 dev_name(dev), MSM_CSID_NAME, csid->id);
 	ret = devm_request_irq(dev, csid->irq, csid_isr,
@@ -1036,7 +1038,7 @@ int msm_csid_register_entity(struct csid_device *csid,
 	pads[MSM_CSID_PAD_SRC].flags = MEDIA_PAD_FL_SOURCE;
 
 	sd->entity.ops = &csid_media_ops;
-	ret = media_entity_init(&sd->entity, MSM_CSID_PADS_NUM, pads, 0);
+	ret = media_entity_pads_init(&sd->entity, MSM_CSID_PADS_NUM, pads);
 	if (ret < 0) {
 		dev_err(dev, "Failed to init media entity\n");
 		goto free_ctrl;

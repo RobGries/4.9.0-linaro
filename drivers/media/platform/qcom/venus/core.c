@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- * Copyright (C) 2016 Linaro Ltd.
+ * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2017 Linaro Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -21,7 +21,6 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/types.h>
-#include <linux/remoteproc.h>
 #include <linux/pm_runtime.h>
 #include <media/videobuf2-v4l2.h>
 #include <media/v4l2-mem2mem.h>
@@ -30,44 +29,10 @@
 #include "core.h"
 #include "vdec.h"
 #include "venc.h"
-
-struct venus_sys_error {
-	struct venus_core *core;
-	struct delayed_work work;
-};
-
-static void venus_sys_error_handler(struct work_struct *work)
-{
-	struct venus_sys_error *handler =
-		container_of(work, struct venus_sys_error, work.work);
-	struct venus_core *core = handler->core;
-	struct device *dev = core->dev;
-	int ret;
-
-	ret = hfi_core_deinit(core);
-	if (ret)
-		dev_err(dev, "core: deinit failed (%d)\n", ret);
-
-	mutex_lock(&core->lock);
-
-	rproc_report_crash(core->rproc, RPROC_FATAL_ERROR);
-
-	rproc_shutdown(core->rproc);
-
-	ret = rproc_boot(core->rproc);
-	if (ret)
-		goto exit;
-
-	core->state = CORE_INIT;
-
-exit:
-	mutex_unlock(&core->lock);
-	kfree(handler);
-}
+#include "firmware.h"
 
 static void venus_event_notify(struct venus_core *core, u32 event)
 {
-	struct venus_sys_error *handler;
 	struct venus_inst *inst;
 
 	switch (event) {
@@ -79,110 +44,69 @@ static void venus_event_notify(struct venus_core *core, u32 event)
 	}
 
 	mutex_lock(&core->lock);
-
 	core->sys_error = true;
-
-	list_for_each_entry(inst, &core->instances, list) {
-		mutex_lock(&inst->lock);
-		inst->session_error = true;
-		mutex_unlock(&inst->lock);
-	}
-
+	list_for_each_entry(inst, &core->instances, list)
+		inst->ops->event_notify(inst, EVT_SESSION_ERROR, NULL);
 	mutex_unlock(&core->lock);
 
-	handler = kzalloc(sizeof(*handler), GFP_KERNEL);
-	if (!handler)
-		return;
-
-	handler->core = core;
-	INIT_DELAYED_WORK(&handler->work, venus_sys_error_handler);
+	disable_irq_nosync(core->irq);
 
 	/*
-	 * Sleep for 5 sec to ensure venus has completed any
-	 * pending cache operations. Without this sleep, we see
-	 * device reset when firmware is unloaded after a sys
-	 * error.
+	 * Delay recovery to ensure venus has completed any pending cache
+	 * operations. Without this sleep, we see device reset when firmware is
+	 * unloaded after a system error.
 	 */
-	schedule_delayed_work(&handler->work, msecs_to_jiffies(5000));
+	schedule_delayed_work(&core->work, msecs_to_jiffies(100));
 }
 
 static const struct hfi_core_ops venus_core_ops = {
 	.event_notify = venus_event_notify,
 };
 
-static int venus_open(struct file *file)
+static void venus_sys_error_handler(struct work_struct *work)
 {
-	struct video_device *vdev = video_devdata(file);
-	struct venus_core *core = video_drvdata(file);
-	struct venus_inst *inst;
-	int ret;
+	struct venus_core *core =
+			container_of(work, struct venus_core, work.work);
+	int ret = 0;
 
-	inst = kzalloc(sizeof(*inst), GFP_KERNEL);
-	if (!inst)
-		return -ENOMEM;
+	dev_warn(core->dev, "system error has occurred, starting recovery!\n");
 
-	INIT_LIST_HEAD(&inst->registeredbufs);
-	INIT_LIST_HEAD(&inst->internalbufs);
-	INIT_LIST_HEAD(&inst->list);
-	mutex_init(&inst->lock);
+	pm_runtime_get_sync(core->dev);
 
-	inst->core = core;
+	hfi_core_deinit(core, true);
+	hfi_destroy(core);
+	mutex_lock(&core->lock);
+	venus_shutdown(&core->dev_fw);
 
-	if (vdev == core->vdev_dec) {
-		inst->session_type = VIDC_SESSION_TYPE_DEC;
-		ret = vdec_open(inst);
-		if (ret)
-			goto err_free_inst;
-		v4l2_fh_init(&inst->fh, core->vdev_dec);
-	} else {
-		inst->session_type = VIDC_SESSION_TYPE_ENC;
-		ret = venc_open(inst);
-		if (ret)
-			goto err_free_inst;
-		v4l2_fh_init(&inst->fh, core->vdev_enc);
+	pm_runtime_put_sync(core->dev);
+
+	ret |= hfi_create(core, &venus_core_ops);
+
+	pm_runtime_get_sync(core->dev);
+
+	ret |= venus_boot(core->dev, &core->dev_fw);
+
+	ret |= hfi_core_resume(core, true);
+
+	enable_irq(core->irq);
+
+	mutex_unlock(&core->lock);
+
+	ret |= hfi_core_init(core);
+
+	pm_runtime_put_sync(core->dev);
+
+	if (ret) {
+		disable_irq_nosync(core->irq);
+		dev_warn(core->dev, "recovery failed (%d)\n", ret);
+		schedule_delayed_work(&core->work, msecs_to_jiffies(10));
+		return;
 	}
 
-	inst->fh.ctrl_handler = &inst->ctrl_handler;
-	v4l2_fh_add(&inst->fh);
-	inst->fh.m2m_ctx = inst->m2m_ctx;
-	file->private_data = &inst->fh;
-
-	return 0;
-
-err_free_inst:
-	kfree(inst);
-	return ret;
+	mutex_lock(&core->lock);
+	core->sys_error = false;
+	mutex_unlock(&core->lock);
 }
-
-static int venus_close(struct file *file)
-{
-	struct venus_inst *inst = to_inst(file);
-
-	if (inst->session_type == VIDC_SESSION_TYPE_DEC)
-		vdec_close(inst);
-	else
-		venc_close(inst);
-
-	mutex_destroy(&inst->lock);
-
-	v4l2_fh_del(&inst->fh);
-	v4l2_fh_exit(&inst->fh);
-
-	kfree(inst);
-	return 0;
-}
-
-static const struct v4l2_file_operations venus_fops = {
-	.owner = THIS_MODULE,
-	.open = venus_open,
-	.release = venus_close,
-	.unlocked_ioctl = video_ioctl2,
-	.poll = v4l2_m2m_fop_poll,
-	.mmap = v4l2_m2m_fop_mmap,
-#ifdef CONFIG_COMPAT
-	.compat_ioctl32 = v4l2_compat_ioctl32,
-#endif
-};
 
 static int venus_clks_get(struct venus_core *core)
 {
@@ -222,9 +146,9 @@ err:
 static void venus_clks_disable(struct venus_core *core)
 {
 	const struct venus_resources *res = core->res;
-	unsigned int i;
+	unsigned int i = res->clks_num;
 
-	for (i = 0; i < res->clks_num; i++)
+	while (i--)
 		clk_disable_unprepare(core->clks[i]);
 }
 
@@ -232,9 +156,8 @@ static int venus_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct venus_core *core;
-	struct device_node *rproc;
 	struct resource *r;
-	int ret, irq;
+	int ret;
 
 	core = devm_kzalloc(dev, sizeof(*core), GFP_KERNEL);
 	if (!core)
@@ -243,24 +166,14 @@ static int venus_probe(struct platform_device *pdev)
 	core->dev = dev;
 	platform_set_drvdata(pdev, core);
 
-	rproc = of_parse_phandle(dev->of_node, "rproc", 0);
-	if (IS_ERR(rproc))
-		return PTR_ERR(rproc);
-
-	core->rproc = rproc_get_by_phandle(rproc->phandle);
-	if (IS_ERR(core->rproc))
-		return PTR_ERR(core->rproc);
-	else if (!core->rproc)
-		return -EPROBE_DEFER;
-
-	r = platform_get_resource_byname(pdev, IORESOURCE_MEM, "venus");
+	r = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	core->base = devm_ioremap_resource(dev, r);
 	if (IS_ERR(core->base))
 		return PTR_ERR(core->base);
 
-	irq = platform_get_irq_byname(pdev, "venus");
-	if (irq < 0)
-		return irq;
+	core->irq = platform_get_irq(pdev, 0);
+	if (core->irq < 0)
+		return core->irq;
 
 	core->res = of_device_get_match_data(dev);
 	if (!core->res)
@@ -276,30 +189,17 @@ static int venus_probe(struct platform_device *pdev)
 
 	INIT_LIST_HEAD(&core->instances);
 	mutex_init(&core->lock);
+	INIT_DELAYED_WORK(&core->work, venus_sys_error_handler);
 
-	ret = devm_request_threaded_irq(dev, irq, hfi_isr, hfi_isr_thread,
+	ret = devm_request_threaded_irq(dev, core->irq, hfi_isr, hfi_isr_thread,
 					IRQF_TRIGGER_HIGH | IRQF_ONESHOT,
 					"venus", core);
 	if (ret)
 		return ret;
 
-	core->core_ops = &venus_core_ops;
-
-	ret = hfi_create(core);
+	ret = hfi_create(core, &venus_core_ops);
 	if (ret)
 		return ret;
-
-	ret = venus_clks_enable(core);
-	if (ret)
-		goto err_hfi_destroy;
-
-	ret = rproc_boot(core->rproc);
-	if (ret) {
-		venus_clks_disable(core);
-		goto err_hfi_destroy;
-	}
-
-	venus_clks_disable(core);
 
 	pm_runtime_enable(dev);
 
@@ -307,56 +207,41 @@ static int venus_probe(struct platform_device *pdev)
 	if (ret < 0)
 		goto err_runtime_disable;
 
+	ret = venus_boot(dev, &core->dev_fw);
+	if (ret)
+		goto err_runtime_disable;
+
+	ret = hfi_core_resume(core, true);
+	if (ret)
+		goto err_venus_shutdown;
+
 	ret = hfi_core_init(core);
 	if (ret)
-		goto err_rproc_shutdown;
-
-	ret = pm_runtime_put_sync(dev);
-	if (ret)
-		goto err_core_deinit;
+		goto err_venus_shutdown;
 
 	ret = v4l2_device_register(dev, &core->v4l2_dev);
 	if (ret)
 		goto err_core_deinit;
 
-	core->vdev_dec = video_device_alloc();
-	if (!core->vdev_dec) {
-		ret = -ENOMEM;
+	ret = of_platform_populate(dev->of_node, NULL, NULL, dev);
+	if (ret)
 		goto err_dev_unregister;
-	}
 
-	core->vdev_enc = video_device_alloc();
-	if (!core->vdev_enc) {
-		ret = -ENOMEM;
-		goto err_dec_release;
-	}
-
-	ret = vdec_init(core, core->vdev_dec, &venus_fops);
+	ret = pm_runtime_put_sync(dev);
 	if (ret)
-		goto err_enc_release;
-
-	ret = venc_init(core, core->vdev_enc, &venus_fops);
-	if (ret)
-		goto err_vdec_deinit;
+		goto err_dev_unregister;
 
 	return 0;
 
-err_vdec_deinit:
-	vdec_deinit(core, core->vdev_dec);
-err_enc_release:
-	video_device_release(core->vdev_enc);
-err_dec_release:
-	video_device_release(core->vdev_dec);
 err_dev_unregister:
 	v4l2_device_unregister(&core->v4l2_dev);
 err_core_deinit:
-	hfi_core_deinit(core);
-err_rproc_shutdown:
-	rproc_shutdown(core->rproc);
+	hfi_core_deinit(core, false);
+err_venus_shutdown:
+	venus_shutdown(&core->dev_fw);
 err_runtime_disable:
 	pm_runtime_set_suspended(dev);
 	pm_runtime_disable(dev);
-err_hfi_destroy:
 	hfi_destroy(core);
 	return ret;
 }
@@ -364,22 +249,23 @@ err_hfi_destroy:
 static int venus_remove(struct platform_device *pdev)
 {
 	struct venus_core *core = platform_get_drvdata(pdev);
+	struct device *dev = core->dev;
 	int ret;
 
-	pm_runtime_get_sync(&pdev->dev);
+	ret = pm_runtime_get_sync(dev);
+	WARN_ON(ret < 0);
 
-	ret = hfi_core_deinit(core);
-
-	rproc_shutdown(core->rproc);
-
-	pm_runtime_put_sync(&pdev->dev);
+	ret = hfi_core_deinit(core, true);
+	WARN_ON(ret);
 
 	hfi_destroy(core);
-	vdec_deinit(core, core->vdev_dec);
-	venc_deinit(core, core->vdev_enc);
-	v4l2_device_unregister(&core->v4l2_dev);
+	venus_shutdown(&core->dev_fw);
+	of_platform_depopulate(dev);
 
-	pm_runtime_disable(core->dev);
+	pm_runtime_put_sync(dev);
+	pm_runtime_disable(dev);
+
+	v4l2_device_unregister(&core->v4l2_dev);
 
 	return ret;
 }
@@ -406,7 +292,15 @@ static int venus_runtime_resume(struct device *dev)
 	if (ret)
 		return ret;
 
-	return hfi_core_resume(core);
+	ret = hfi_core_resume(core, false);
+	if (ret)
+		goto err_clks_disable;
+
+	return 0;
+
+err_clks_disable:
+	venus_clks_disable(core);
+	return ret;
 }
 #endif
 
@@ -461,9 +355,8 @@ static const struct venus_resources msm8996_res = {
 	.freq_tbl_size = ARRAY_SIZE(msm8996_freq_table),
 	.reg_tbl = msm8996_reg_preset,
 	.reg_tbl_size = ARRAY_SIZE(msm8996_reg_preset),
-	.clks = { "core", "core0", "core1", "iface", "bus", "rpm_mmaxi",
-		  "mmagic_ahb", "mmagic_maxi", "mmagic_video_axi", "maxi_clk" },
-	.clks_num = 10,
+	.clks = {"core", "iface", "bus", "mbus" },
+	.clks_num = 4,
 	.max_load = 2563200,
 	.hfi_version = HFI_VERSION_3XX,
 	.vmem_id = VIDC_RESOURCE_NONE,
@@ -477,7 +370,6 @@ static const struct of_device_id venus_dt_match[] = {
 	{ .compatible = "qcom,msm8996-venus", .data = &msm8996_res, },
 	{ }
 };
-
 MODULE_DEVICE_TABLE(of, venus_dt_match);
 
 static struct platform_driver qcom_venus_driver = {
@@ -489,7 +381,6 @@ static struct platform_driver qcom_venus_driver = {
 		.pm = &venus_pm_ops,
 	},
 };
-
 module_platform_driver(qcom_venus_driver);
 
 MODULE_ALIAS("platform:qcom-venus");

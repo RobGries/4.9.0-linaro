@@ -1,4 +1,4 @@
-* Qualcomm Venus video encode/decode accelerator
+* Qualcomm Venus video encoder/decoder accelerators
 
 - compatible:
 	Usage: required
@@ -9,39 +9,18 @@
 - reg:
 	Usage: required
 	Value type: <prop-encoded-array>
-	Definition: Register ranges as listed in the reg-names property.
-- reg-names:
-	Usage: required
-	Value type: <stringlist>
-	Definition: Should contain following entries:
-		- "venus"	Venus register base
-- reg-names:
-	Usage: optional for msm8996
-	Value type: <stringlist>
-	Definition: Should contain following entries:
-		- "vmem"	Video memory register base
+	Definition: Register base address and length of the register map.
 - interrupts:
 	Usage: required
 	Value type: <prop-encoded-array>
-	Definition: Should contain interrupts as listed in the interrupt-names
-		    property.
-- interrupt-names:
-	Usage: required
-	Value type: <stringlist>
-	Definition: Should contain following entries:
-		- "venus"	Venus interrupt line
-- interrupt-names:
-	Usage: optional for msm8996
-	Value type: <stringlist>
-	Definition: Should contain following entries:
-		- "vmem"	Video memory interrupt line
+	Definition: Should contain interrupt line number.
 - clocks:
 	Usage: required
 	Value type: <prop-encoded-array>
 	Definition: A List of phandle and clock specifier pairs as listed
 		    in clock-names property.
 - clock-names:
-	Usage: required
+	Usage: required for msm8916
 	Value type: <stringlist>
 	Definition: Should contain the following entries:
 		- "core"	Core video accelerator clock
@@ -51,48 +30,84 @@
 	Usage: required for msm8996
 	Value type: <stringlist>
 	Definition: Should contain the following entries:
-		- "subcore0"		Subcore0 video accelerator clock
-		- "subcore1"		Subcore1 video accelerator clock
-		- "mmssnoc_axi"		Multimedia subsystem NOC AXI clock
-		- "mmss_mmagic_iface"	Multimedia subsystem MMAGIC AHB clock
-		- "mmss_mmagic_mbus"	Multimedia subsystem MMAGIC MAXI clock
-		- "mmagic_video_bus"	MMAGIC video AXI clock
-		- "video_mbus"		Video MAXI clock
-- clock-names:
-	Usage: optional for msm8996
-	Value type: <stringlist>
-	Definition: Should contain the following entries:
-		- "vmem_bus"	Video memory MAXI clock
-		- "vmem_iface"	Video memory AHB clock
+		- "core"	Core video accelerator clock
+		- "iface"	Video accelerator AHB clock
+		- "bus"		Video accelerator AXI clock
+		- "mbus"	Video MAXI clock
 - power-domains:
 	Usage: required
 	Value type: <prop-encoded-array>
 	Definition: A phandle and power domain specifier pairs to the
 		    power domain which is responsible for collapsing
 		    and restoring power to the peripheral.
-- rproc:
-	Usage: required
-	Value type: <prop-encoded-array>
-	Definition: A phandle to remote processor responsible for
-		    firmware loading and processor booting.
-
 - iommus:
 	Usage: required
 	Value type: <prop-encoded-array>
 	Definition: A list of phandle and IOMMU specifier pairs.
+- memory-region:
+	Usage: required
+	Value type: <phandle>
+	Definition: reference to the reserved-memory for the firmware
+		    memory region.
+
+* Subnodes
+The Venus video-codec node must contain two subnodes representing
+video-decoder and video-encoder.
+
+Every of video-encoder or video-decoder subnode should have:
+
+- compatible:
+	Usage: required
+	Value type: <stringlist>
+	Definition: Value should contain "venus-decoder" or "venus-encoder"
+- clocks:
+	Usage: required for msm8996
+	Value type: <prop-encoded-array>
+	Definition: A List of phandle and clock specifier pairs as listed
+		    in clock-names property.
+- clock-names:
+	Usage: required for msm8996
+	Value type: <stringlist>
+	Definition: Should contain the following entries:
+		- "core"	Subcore video accelerator clock
+
+- power-domains:
+	Usage: required for msm8996
+	Value type: <prop-encoded-array>
+	Definition: A phandle and power domain specifier pairs to the
+		    power domain which is responsible for collapsing
+		    and restoring power to the subcore.
 
 * An Example
 	video-codec@1d00000 {
 		compatible = "qcom,msm8916-venus";
 		reg = <0x01d00000 0xff000>;
+<<<<<<< HEAD
 		reg-names = "venus";
 		interrupts = <GIC_SPI 44 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "venus";
+=======
+		interrupts = <GIC_SPI 44 IRQ_TYPE_LEVEL_HIGH>;
+>>>>>>> remotes/quic/caf-imm/kernel/release/qcomlt-4.9
 		clocks = <&gcc GCC_VENUS0_VCODEC0_CLK>,
 			 <&gcc GCC_VENUS0_AHB_CLK>,
 			 <&gcc GCC_VENUS0_AXI_CLK>;
 		clock-names = "core", "iface", "bus";
 		power-domains = <&gcc VENUS_GDSC>;
-		rproc = <&venus_rproc>;
 		iommus = <&apps_iommu 5>;
+		memory-region = <&venus_mem>;
+
+		video-decoder {
+			compatible = "venus-decoder";
+			clocks = <&mmcc VIDEO_SUBCORE0_CLK>;
+			clock-names = "core";
+			power-domains = <&mmcc VENUS_CORE0_GDSC>;
+		};
+
+		video-encoder {
+			compatible = "venus-encoder";
+			clocks = <&mmcc VIDEO_SUBCORE1_CLK>;
+			clock-names = "core";
+			power-domains = <&mmcc VENUS_CORE1_GDSC>;
+		};
 	};

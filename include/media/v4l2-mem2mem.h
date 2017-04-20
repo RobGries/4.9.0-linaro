@@ -433,17 +433,46 @@ static inline void *v4l2_m2m_next_dst_buf(struct v4l2_m2m_ctx *m2m_ctx)
 	return v4l2_m2m_next_buf(&m2m_ctx->cap_q_ctx);
 }
 
-#define v4l2_m2m_for_each_dst_buf(q_ctx, b)	\
-	list_for_each_entry(b, &q_ctx->cap_q_ctx.rdy_queue, list)
+/**
+ * v4l2_m2m_for_each_dst_buf() - iterate over a list of destination ready
+ * buffers
+ *
+ * @m2m_ctx: m2m context assigned to the instance given by struct &v4l2_m2m_ctx
+ * @b: current buffer of type struct v4l2_m2m_buffer
+ */
+#define v4l2_m2m_for_each_dst_buf(m2m_ctx, b)	\
+	list_for_each_entry(b, &m2m_ctx->cap_q_ctx.rdy_queue, list)
 
-#define v4l2_m2m_for_each_src_buf(q_ctx, b)	\
-	list_for_each_entry(b, &q_ctx->out_q_ctx.rdy_queue, list)
+/**
+ * v4l2_m2m_for_each_src_buf() - iterate over a list of source ready buffers
+ *
+ * @m2m_ctx: m2m context assigned to the instance given by struct &v4l2_m2m_ctx
+ * @b: current buffer of type struct v4l2_m2m_buffer
+ */
+#define v4l2_m2m_for_each_src_buf(m2m_ctx, b)	\
+	list_for_each_entry(b, &m2m_ctx->out_q_ctx.rdy_queue, list)
 
-#define v4l2_m2m_for_each_dst_buf_safe(q_ctx, b, n)	\
-	list_for_each_entry_safe(b, n, &q_ctx->cap_q_ctx.rdy_queue, list)
+/**
+ * v4l2_m2m_for_each_dst_buf_safe() - iterate over a list of destination ready
+ * buffers safely
+ *
+ * @m2m_ctx: m2m context assigned to the instance given by struct &v4l2_m2m_ctx
+ * @b: current buffer of type struct v4l2_m2m_buffer
+ * @n: used as temporary storage
+ */
+#define v4l2_m2m_for_each_dst_buf_safe(m2m_ctx, b, n)	\
+	list_for_each_entry_safe(b, n, &m2m_ctx->cap_q_ctx.rdy_queue, list)
 
-#define v4l2_m2m_for_each_src_buf_safe(q_ctx, b, n)	\
-	list_for_each_entry_safe(b, n, &q_ctx->out_q_ctx.rdy_queue, list)
+/**
+ * v4l2_m2m_for_each_src_buf_safe() - iterate over a list of source ready
+ * buffers safely
+ *
+ * @m2m_ctx: m2m context assigned to the instance given by struct &v4l2_m2m_ctx
+ * @b: current buffer of type struct v4l2_m2m_buffer
+ * @n: used as temporary storage
+ */
+#define v4l2_m2m_for_each_src_buf_safe(m2m_ctx, b, n)	\
+	list_for_each_entry_safe(b, n, &m2m_ctx->out_q_ctx.rdy_queue, list)
 
 /**
  * v4l2_m2m_get_src_vq() - return vb2_queue for source buffers
@@ -497,19 +526,40 @@ static inline void *v4l2_m2m_dst_buf_remove(struct v4l2_m2m_ctx *m2m_ctx)
 	return v4l2_m2m_buf_remove(&m2m_ctx->cap_q_ctx);
 }
 
-void v4l2_m2m_buf_remove_exact(struct v4l2_m2m_queue_ctx *q_ctx,
-			       struct vb2_v4l2_buffer *vbuf);
+/**
+ * v4l2_m2m_buf_remove_by_buf() - take off exact buffer from the list of ready
+ * buffers
+ *
+ * @q_ctx: pointer to struct @v4l2_m2m_queue_ctx
+ * @vbuf: the buffer to be removed
+ */
+void v4l2_m2m_buf_remove_by_buf(struct v4l2_m2m_queue_ctx *q_ctx,
+				struct vb2_v4l2_buffer *vbuf);
 
-static inline void v4l2_m2m_src_buf_remove_exact(struct v4l2_m2m_ctx *m2m_ctx,
-						 struct vb2_v4l2_buffer *vbuf)
+/**
+ * v4l2_m2m_src_buf_remove_by_buf() - take off exact source buffer from the list
+ * of ready buffers
+ *
+ * @m2m_ctx: m2m context assigned to the instance given by struct &v4l2_m2m_ctx
+ * @vbuf: the buffer to be removed
+ */
+static inline void v4l2_m2m_src_buf_remove_by_buf(struct v4l2_m2m_ctx *m2m_ctx,
+						  struct vb2_v4l2_buffer *vbuf)
 {
-	v4l2_m2m_buf_remove_exact(&m2m_ctx->out_q_ctx, vbuf);
+	v4l2_m2m_buf_remove_by_buf(&m2m_ctx->out_q_ctx, vbuf);
 }
 
-static inline void v4l2_m2m_dst_buf_remove_exact(struct v4l2_m2m_ctx *m2m_ctx,
-						 struct vb2_v4l2_buffer *vbuf)
+/**
+ * v4l2_m2m_dst_buf_remove_by_buf() - take off exact destination buffer from the
+ * list of ready buffers
+ *
+ * @m2m_ctx: m2m context assigned to the instance given by struct &v4l2_m2m_ctx
+ * @vbuf: the buffer to be removed
+ */
+static inline void v4l2_m2m_dst_buf_remove_by_buf(struct v4l2_m2m_ctx *m2m_ctx,
+						  struct vb2_v4l2_buffer *vbuf)
 {
-	v4l2_m2m_buf_remove_exact(&m2m_ctx->cap_q_ctx, vbuf);
+	v4l2_m2m_buf_remove_by_buf(&m2m_ctx->cap_q_ctx, vbuf);
 }
 
 struct vb2_v4l2_buffer *

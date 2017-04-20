@@ -1,15 +1,11 @@
 # Makefile for Qualcomm Venus driver
 
-venus-objs += \
-		core.o \
-		helpers.o \
-		vdec.o \
-		vdec_ctrls.o \
-		venc.o \
-		venc_ctrls.o \
-		hfi_venus.o \
-		hfi_msgs.o \
-		hfi_cmds.o \
-		hfi.o \
+venus-core-objs += core.o helpers.o firmware.o \
+		   hfi_venus.o hfi_msgs.o hfi_cmds.o hfi.o
 
-obj-$(CONFIG_VIDEO_QCOM_VENUS) += venus.o
+venus-dec-objs += vdec.o vdec_ctrls.o
+venus-enc-objs += venc.o venc_ctrls.o
+
+obj-$(CONFIG_VIDEO_QCOM_VENUS) += venus-core.o
+obj-$(CONFIG_VIDEO_QCOM_VENUS) += venus-dec.o
+obj-$(CONFIG_VIDEO_QCOM_VENUS) += venus-enc.o

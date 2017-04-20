@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- * Copyright (C) 2016 Linaro Ltd.
+ * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2017 Linaro Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -23,7 +23,7 @@
 
 #include "hfi.h"
 
-#define VIDC_CLKS_NUM_MAX	12
+#define VIDC_CLKS_NUM_MAX	4
 
 struct freq_tbl {
 	unsigned int load;
@@ -60,18 +60,24 @@ struct venus_format {
  * struct venus_core - holds core parameters valid for all instances
  *
  * @base:	IO memory base address
+ * @irq:		Venus irq
  * @clks:	an array of struct clk pointers
+ * @core0_clk:	a struct clk pointer for core0
+ * @core1_clk:	a struct clk pointer for core1
  * @vdev_dec:	a reference to video device structure for decoder instances
  * @vdev_enc:	a reference to video device structure for encoder instances
  * @v4l2_dev:	a holder for v4l2 device structure
  * @res:		a reference to venus resources structure
- * @rproc:	a reference to remote processor structure
- * @dev:	 	convinience struct device pointer
+ * @dev:		convinience struct device pointer
+ * @dev_dec:	convinience struct device pointer for decoder device
+ * @dev_enc:	convinience struct device pointer for encoder device
  * @lock:	a lock for this strucure
  * @instances:	a list_head of all instances
+ * @insts_count:	num of instances
  * @state:	the state of the venus core
  * @done:	a completion for sync HFI operations
- * @error:	an error returned during last HFI sync operation
+ * @error:	an error returned during last HFI sync operations
+ * @sys_error:	an error flag that signal system error event
  * @core_ops:	the core operations
  * @enc_codecs:	encoders supported by this core
  * @dec_codecs:	decoders supported by this core
@@ -79,18 +85,25 @@ struct venus_format {
  * @core_caps:	core capabilities
  * @priv:	a private filed for HFI operations
  * @ops:		the core HFI operations
+ * @work:	a delayed work for handling system fatal error
  */
 struct venus_core {
 	void __iomem *base;
+	int irq;
 	struct clk *clks[VIDC_CLKS_NUM_MAX];
+	struct clk *core0_clk;
+	struct clk *core1_clk;
 	struct video_device *vdev_dec;
 	struct video_device *vdev_enc;
 	struct v4l2_device v4l2_dev;
 	const struct venus_resources *res;
-	struct rproc *rproc;
 	struct device *dev;
+	struct device *dev_dec;
+	struct device *dev_enc;
+	struct device dev_fw;
 	struct mutex lock;
 	struct list_head instances;
+	atomic_t insts_count;
 	unsigned int state;
 	struct completion done;
 	unsigned int error;
@@ -106,6 +119,7 @@ struct venus_core {
 	unsigned int core_caps;
 	void *priv;
 	const struct hfi_ops *ops;
+	struct delayed_work work;
 };
 
 struct vdec_controls {
@@ -142,8 +156,15 @@ struct venc_controls {
 
 	u32 header_mode;
 
-	u32 profile;
-	u32 level;
+	struct {
+		u32 mpeg4;
+		u32 h264;
+		u32 vpx;
+	} profile;
+	struct {
+		u32 mpeg4;
+		u32 h264;
+	} level;
 };
 
 struct venus_buffer {
@@ -152,6 +173,8 @@ struct venus_buffer {
 	dma_addr_t dma_addr;
 	u32 size;
 	struct list_head reg_list;
+	u32 flags;
+	struct list_head ref_list;
 };
 
 #define to_venus_buffer(ptr)	container_of(ptr, struct venus_buffer, vb)
@@ -165,7 +188,7 @@ struct venus_buffer {
  * @internalbufs:	a list of internal bufferes
  * @registeredbufs:	a list of registered capture bufferes
  * @ctrl_handler:	v4l control handler
- * @controls:	an union of decoder and encoder control parameters
+ * @controls:	a union of decoder and encoder control parameters
  * @fh:	 a holder of v4l file handle structure
  * @width:	current capture width
  * @height:	current capture height
@@ -175,7 +198,7 @@ struct venus_buffer {
  * @quantization:	current quantization
  * @xfer_func:	current xfer function
  * @fps:		holds current FPS
- * @timeperframe:	holds current c
+ * @timeperframe:	holds current time per frame structure
  * @fmt_out:	a reference to output format structure
  * @fmt_cap:	a reference to capture format structure
  * @num_input_bufs:	holds number of input buffers
@@ -185,18 +208,18 @@ struct venus_buffer {
  * @reconfig:	a flag raised by decoder when the stream resolution changed
  * @reconfig_width:	holds the new width
  * @reconfig_height:	holds the new height
- * @sequence:		a sequence counter
- * @codec_cfg:	a flag used to annonce a codec configuration
+ * @sequence_cap:	a sequence counter for capture queue
+ * @sequence_out:	a sequence counter for output queue
  * @m2m_dev:	a reference to m2m device structure
  * @m2m_ctx:	a reference to m2m context structure
  * @state:	current state of the instance
  * @done:	a completion for sync HFI operation
  * @error:	an error returned during last HFI sync operation
- * @session_error: a flag rised by HFI interface in case of session error
- * @ops: HFI operations
+ * @session_error:	a flag rised by HFI interface in case of session error
+ * @ops:		HFI operations
  * @priv:	a private for HFI operations callbacks
  * @session_type:	the type of the session (decoder or encoder)
- * @hprop:	an union of get property
+ * @hprop:	a union used as a holder by get property
  * @cap_width:	width capability
  * @cap_height:	height capability
  * @cap_mbs_per_frame:	macroblocks per frame capability
@@ -210,8 +233,8 @@ struct venus_buffer {
  * @cap_secure_output2_threshold: secure OUTPUT2 threshold capability
  * @cap_bufs_mode_static:	buffers allocation mode capability
  * @cap_bufs_mode_dynamic:	buffers allocation mode capability
- * @pl_count:	profile/level count capability
- * @pl:		profile/level pair capability
+ * @pl_count:	count of supported profiles/levels
+ * @pl:		supported profiles/levels
  * @bufreq:	holds buffer requirements
  */
 struct venus_inst {
@@ -220,6 +243,8 @@ struct venus_inst {
 	struct venus_core *core;
 	struct list_head internalbufs;
 	struct list_head registeredbufs;
+	struct list_head delayed_process;
+	struct work_struct delayed_process_work;
 
 	struct v4l2_ctrl_handler ctrl_handler;
 	union {
@@ -227,9 +252,7 @@ struct venus_inst {
 		struct venc_controls enc;
 	} controls;
 	struct v4l2_fh fh;
-	void *alloc_ctx_cap;
-	void *alloc_ctx_out;
-	unsigned streamon_cap, streamon_out;
+	unsigned int streamon_cap, streamon_out;
 	u32 width;
 	u32 height;
 	u32 out_width;
@@ -249,8 +272,8 @@ struct venus_inst {
 	bool reconfig;
 	u32 reconfig_width;
 	u32 reconfig_height;
-	u64 sequence;
-	bool codec_cfg;
+	u32 sequence_cap;
+	u32 sequence_out;
 	struct v4l2_m2m_dev *m2m_dev;
 	struct v4l2_m2m_ctx *m2m_ctx;
 	unsigned int state;
@@ -279,7 +302,7 @@ struct venus_inst {
 };
 
 #define ctrl_to_inst(ctrl)	\
-	container_of(ctrl->handler, struct venus_inst, ctrl_handler)
+	container_of((ctrl)->handler, struct venus_inst, ctrl_handler)
 
 static inline struct venus_inst *to_inst(struct file *filp)
 {
