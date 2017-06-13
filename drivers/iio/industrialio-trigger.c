@@ -288,14 +288,6 @@ out_put_irq:
 out_put_module:
 	module_put(pf->indio_dev->info->driver_module);
 	return ret;
-
-out_free_irq:
-	free_irq(pf->irq, pf);
-out_put_irq:
-	iio_trigger_put_irq(trig, pf->irq);
-out_put_module:
-	module_put(pf->indio_dev->info->driver_module);
-	return ret;
 }
 
 static int iio_trigger_detach_poll_func(struct iio_trigger *trig,
