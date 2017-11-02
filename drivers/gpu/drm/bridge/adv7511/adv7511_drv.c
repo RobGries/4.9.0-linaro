@@ -502,7 +502,12 @@ static int adv7511_wait_for_edid(struct adv7511 *adv7511, int timeout)
 {
 	int ret;
 
-	if (adv7511->i2c_main->irq) {
+	/* For some unknown reason, we aren't getting the EDID_READY interrupt
+	 * when adv7511_get_modes() is called in certain scenarios. Rely on
+	 * polling for the EDID_READY status bit insteading of getting woken
+	 * up by an irq
+	 */
+	if (0/*adv7511->i2c_main->irq*/) {
 		ret = wait_event_interruptible_timeout(adv7511->wq,
 				adv7511->edid_read, msecs_to_jiffies(timeout));
 	} else {
