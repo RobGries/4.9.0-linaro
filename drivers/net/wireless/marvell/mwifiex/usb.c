@@ -505,7 +505,7 @@ static int mwifiex_usb_suspend(struct usb_interface *intf, pm_message_t message)
 
 	if (!card || !card->adapter) {
 		pr_err("%s: card or card->adapter is NULL\n", __func__);
-		return 0;
+		//return 0;
 	}
 	adapter = card->adapter;
 
